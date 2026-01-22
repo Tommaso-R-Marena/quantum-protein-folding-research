@@ -1,60 +1,102 @@
-# Quantum Protein Folding Research
+# QuantumFold-Advantage: Quantum Protein Folding Research
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Qiskit](https://img.shields.io/badge/Qiskit-1.0+-6929C4.svg)](https://qiskit.org/)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Qiskit](https://img.shields.io/badge/Qiskit-1.0+-6133BD.svg)](https://qiskit.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Tommaso-R-Marena/quantum-protein-folding-research/blob/main/notebooks/01_quick_start.ipynb)
 
-**Production-ready quantum algorithms for lattice protein folding using VQE and QAOA**
+**Platform-agnostic quantum algorithms for protein structure prediction, exploring quantum advantage in computational biology.**
 
-*Developed by Tommaso R. Marena at The Catholic University of America*
+## 🧬 Overview
 
----
+QuantumFold-Advantage is a research platform implementing variational quantum eigensolver (VQE) and quantum approximate optimization algorithm (QAOA) approaches to the lattice protein folding problem. This project bridges quantum computing and computational biology, providing:
 
-## 📋 Overview
-
-This repository implements state-of-the-art quantum algorithms for protein structure prediction on lattice models. The codebase provides:
-
-- **Variational Quantum Eigensolver (VQE)** with hardware-efficient ansätze
-- **Quantum Approximate Optimization Algorithm (QAOA)** for combinatorial folding
-- **Classical baselines** (simulated annealing, exact enumeration)
-- **Comprehensive analysis tools** (metrics, visualization, benchmarking)
-- **Production-ready pipeline** with noise handling and multiple backends
+- **Production-ready implementations** of VQE and QAOA for protein folding
+- **Multiple encoding schemes**: turn-based and binary position encodings
+- **Classical baselines**: simulated annealing and exact enumeration for benchmarking
+- **Comprehensive analysis tools**: energy metrics, RMSD calculations, and visualization
+- **Hardware-efficient ansätze** optimized for NISQ devices
+- **Flexible backend support**: Qiskit Aer simulators and real quantum hardware
 
 ### Key Features
 
-✅ **Multiple encoding schemes**: Turn-based and binary position encoding  
-✅ **Flexible Hamiltonians**: Contact energy (Miyazawa-Jernigan), backbone constraints, compactness bias  
-✅ **Quantum circuits**: Hardware-efficient and problem-inspired ansätze  
-✅ **Classical optimizers**: COBYLA, SPSA, L-BFGS-B with convergence tracking  
-✅ **Benchmarking framework**: Compare quantum vs classical performance  
-✅ **Visualization suite**: Convergence plots, structure visualization, energy landscapes  
+✨ **Quantum Algorithms**
+- Variational Quantum Eigensolver (VQE) with customizable ansatz
+- Quantum Approximate Optimization Algorithm (QAOA) with tunable depth
+- Support for problem-inspired and hardware-efficient circuit designs
 
----
+🧪 **Protein Models**
+- HP (Hydrophobic-Polar) lattice model
+- FASTA sequence parsing
+- PDB structure loading
+- Miyazawa-Jernigan contact energy matrix
 
-## 🚀 Quick Start
+📊 **Analysis & Benchmarking**
+- RMSD calculations with structural alignment
+- Energy landscape visualization
+- Convergence analysis and optimization tracking
+- Quantum vs. classical performance comparison
 
-### Installation
+## 📋 Table of Contents
+
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Usage Examples](#usage-examples)
+- [Project Structure](#project-structure)
+- [Notebooks](#notebooks)
+- [Documentation](#documentation)
+- [Research Context](#research-context)
+- [Contributing](#contributing)
+- [Citation](#citation)
+- [License](#license)
+- [Contact](#contact)
+
+## 🚀 Installation
+
+### Prerequisites
+
+- Python 3.8 or higher
+- pip or conda package manager
+
+### Install from Source
 
 ```bash
 # Clone the repository
 git clone https://github.com/Tommaso-R-Marena/quantum-protein-folding-research.git
 cd quantum-protein-folding-research
 
+# Create virtual environment (recommended)
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
 # Install dependencies
 pip install -r requirements.txt
 
-# Install the package in development mode
+# Install package in development mode
 pip install -e .
 ```
 
 ### Dependencies
 
-- Python ≥ 3.10
-- Qiskit ≥ 1.0
-- NumPy, SciPy, Matplotlib
-- Optional: Jupyter for notebooks
+Core requirements:
+- `qiskit >= 1.0.0`
+- `qiskit-aer >= 0.13.0`
+- `numpy >= 1.21.0`
+- `scipy >= 1.7.0`
+- `matplotlib >= 3.4.0`
+- `biopython >= 1.79` (for FASTA/PDB parsing)
 
-### Basic Usage
+## ⚡ Quick Start
+
+### 🎯 Try it in Google Colab
+
+The fastest way to get started is with our interactive Colab notebook:
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Tommaso-R-Marena/quantum-protein-folding-research/blob/main/notebooks/01_quick_start.ipynb)
+
+No installation required - just click and run!
+
+### VQE for Protein Folding
 
 ```python
 from quantum_protein_folding.models import VQEFoldingModel
@@ -62,276 +104,280 @@ from quantum_protein_folding.models import VQEFoldingModel
 # Define HP sequence
 sequence = "HPHPPHHPHH"
 
-# Initialize VQE model
+# Create VQE model
 model = VQEFoldingModel(
     sequence=sequence,
     lattice_dim=2,
-    ansatz_type='hardware_efficient',
-    ansatz_depth=3
+    ansatz_depth=3,
+    optimizer='COBYLA'
 )
 
 # Run optimization
 result = model.run(maxiter=200)
 
-# Decode and visualize
-conformation = model.decode_conformation(result.optimal_bitstring)
-energy = model.evaluate_energy(conformation)
-
 print(f"Optimal energy: {result.optimal_value:.4f}")
+print(f"Best bitstring: {result.optimal_bitstring}")
+
+# Decode to 3D structure
+conformation = model.decode_conformation(result.optimal_bitstring)
 print(f"Conformation:\n{conformation}")
 ```
 
----
-
-## 📓 Interactive Tutorial
-
-**Explore the complete workflow in our comprehensive Jupyter notebook:**
-
-### [**📖 View the Tutorial Notebook**](examples/basic_usage.ipynb)
-
-The notebook covers:
-
-1. **Basic VQE folding** - Step-by-step protein folding with VQE
-2. **QAOA implementation** - Alternative quantum approach
-3. **Classical comparison** - Benchmarking against simulated annealing
-4. **Metrics & visualization** - RMSD, energy gaps, convergence analysis
-5. **Scaling analysis** - Resource requirements vs sequence length
-6. **Advanced topics** - Exact diagonalization, custom Hamiltonians
-
-### Run in Google Colab
-
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Tommaso-R-Marena/quantum-protein-folding-research/blob/main/examples/basic_usage.ipynb)
-
-### Run Locally
-
-```bash
-jupyter notebook examples/basic_usage.ipynb
-```
-
----
-
-## 🏗️ Repository Structure
-
-```
-quantum-protein-folding-research/
-├── src/quantum_protein_folding/
-│   ├── data/               # Data loaders and preprocessing
-│   │   ├── loaders.py      # HP, FASTA, PDB parsers
-│   │   └── preprocess.py   # Lattice encoding and constraints
-│   ├── quantum/            # Quantum algorithms
-│   │   ├── hamiltonian.py  # Hamiltonian construction
-│   │   ├── circuit_builder.py  # Ansätze and QAOA circuits
-│   │   ├── optimizer.py    # Classical optimizers
-│   │   ├── vqe.py          # VQE solver
-│   │   └── qaoa.py         # QAOA solver
-│   ├── models/             # High-level APIs
-│   │   ├── vqe_model.py    # VQE folding model
-│   │   └── qaoa_model.py   # QAOA folding model
-│   ├── classical/          # Classical baselines
-│   │   ├── energy.py       # Energy calculations
-│   │   └── baseline.py     # Simulated annealing, exact enumeration
-│   └── analysis/           # Analysis and visualization
-│       ├── metrics.py      # RMSD, energy gaps, convergence
-│       └── plots.py        # Visualization functions
-├── examples/
-│   └── basic_usage.ipynb   # Comprehensive tutorial
-├── tests/                  # Unit tests
-├── benchmarks/             # Benchmarking scripts
-├── requirements.txt
-└── README.md
-```
-
----
-
-## 🔬 Scientific Background
-
-### Problem Formulation
-
-Protein folding on 2D/3D lattices minimizes the Hamiltonian:
-
-```
-H = H_contact + λ·H_backbone + μ·H_bias
-```
-
-Where:
-- **H_contact**: Inter-residue contact energies (Miyazawa-Jernigan matrix)
-- **H_backbone**: Chain connectivity and self-avoidance constraints
-- **H_bias**: Compactness regularization
-
-### Quantum Algorithms
-
-#### VQE (Variational Quantum Eigensolver)
-
-Minimizes ground state energy via parameterized quantum circuits:
-
-```
-min_θ ⟨ψ(θ)|H|ψ(θ)⟩
-```
-
-**Ansatz options:**
-- Hardware-efficient: Alternating rotation and entanglement layers
-- Problem-inspired: Lattice-topology-aware circuits
-
-#### QAOA (Quantum Approximate Optimization Algorithm)
-
-Approximates solutions to combinatorial optimization:
-
-```
-|ψ(β,γ)⟩ = ∏ₚ e^(-iβₚH_M) e^(-iγₚH_C) |+⟩^⊗n
-```
-
----
-
-## 📊 Example Results
-
-### VQE Convergence
+### QAOA for Protein Folding
 
 ```python
-from quantum_protein_folding.analysis.plots import plot_convergence
+from quantum_protein_folding.models import QAOAFoldingModel
 
-plot_convergence(
-    result.convergence_history,
-    title="VQE Optimization",
-    save_path="figures/vqe_convergence.png"
-)
-```
-
-### Conformation Visualization
-
-```python
-from quantum_protein_folding.analysis.plots import plot_conformation_2d
-
-plot_conformation_2d(
-    conformation,
+# Create QAOA model with 3 layers
+model = QAOAFoldingModel(
     sequence="HPHPPHHPHH",
-    title="Optimized Structure",
-    save_path="figures/structure.png"
+    p_layers=3,
+    lattice_dim=2
 )
+
+# Run optimization
+result = model.run(maxiter=100)
+
+print(f"Best solution: {result.optimal_bitstring}")
+print(f"Cost: {result.optimal_value:.4f}")
 ```
 
-### Benchmarking
+### Classical Baseline Comparison
 
 ```python
 from quantum_protein_folding.classical import simulated_annealing_fold
+from quantum_protein_folding.data.preprocess import map_to_lattice
+from quantum_protein_folding.data.loaders import load_hp_sequence
 
-# Classical baseline
+# Load sequence and create encoding
+sequence = load_hp_sequence("HPHPPHHPHH")
+encoding = map_to_lattice(sequence, lattice_dim=2)
+
+# Run simulated annealing
 classical_result = simulated_annealing_fold(
-    encoding, max_iterations=5000
+    encoding,
+    max_iterations=10000,
+    initial_temp=10.0
 )
 
-# Compare
-rmsd = compute_rmsd(vqe_conformation, classical_result.conformation)
-energy_gap = compute_energy_gap(vqe_energy, classical_result.energy)
-
-print(f"RMSD: {rmsd:.4f}")
-print(f"Energy gap: {energy_gap*100:.2f}%")
+print(f"Classical energy: {classical_result.energy:.4f}")
+print(f"Quantum energy: {result.optimal_value:.4f}")
+print(f"Energy gap: {result.optimal_value - classical_result.energy:.4f}")
 ```
 
----
+## 📚 Usage Examples
 
-## 🧪 Running Tests
+### Example 1: Custom Hamiltonian Construction
+
+```python
+from quantum_protein_folding.quantum.hamiltonian import build_hamiltonian
+from quantum_protein_folding.data.loaders import load_hp_sequence
+
+sequence = load_hp_sequence("HPHPPHHPHH")
+
+hamiltonian = build_hamiltonian(
+    sequence=sequence,
+    n_qubits=18,
+    lattice_dim=2,
+    lattice_size=12,
+    encoding_type='turn_direction',
+    constraint_weight=10.0,
+    bias_weight=0.1
+)
+
+print(f"Hamiltonian: {hamiltonian}")
+print(f"Number of terms: {len(hamiltonian)}")
+```
+
+### Example 2: Visualization and Analysis
+
+```python
+from quantum_protein_folding.analysis import (
+    plot_convergence,
+    plot_conformation_2d,
+    compute_rmsd
+)
+
+# Plot optimization convergence
+plot_convergence(
+    history=result.convergence_history,
+    title="VQE Optimization",
+    save_path="results/convergence.png"
+)
+
+# Visualize protein conformation
+conformation = model.decode_conformation(result.optimal_bitstring)
+plot_conformation_2d(
+    conformation=conformation,
+    sequence=sequence,
+    title="Optimal Folding",
+    save_path="results/structure.png"
+)
+
+# Compare structures
+rmsd = compute_rmsd(conformation1, conformation2, align=True)
+print(f"RMSD between structures: {rmsd:.3f}")
+```
+
+### Example 3: Load Real Protein from PDB
+
+```python
+from quantum_protein_folding.data.loaders import load_pdb_sequence
+
+# Load from PDB file
+sequence = load_pdb_sequence("data/1CRN.pdb")
+
+print(f"Sequence: {sequence.sequence}")
+print(f"Length: {sequence.length}")
+print(f"Contact matrix shape: {sequence.contact_matrix.shape}")
+```
+
+## 📁 Project Structure
+
+```
+quantum-protein-folding-research/
+├── src/
+│   └── quantum_protein_folding/
+│       ├── data/              # Data loaders and preprocessing
+│       │   ├── loaders.py     # HP, FASTA, PDB parsers
+│       │   └── preprocess.py  # Lattice encoding
+│       ├── quantum/           # Quantum algorithms
+│       │   ├── hamiltonian.py # Hamiltonian construction
+│       │   ├── vqe.py         # VQE implementation
+│       │   ├── qaoa.py        # QAOA implementation
+│       │   ├── circuit_builder.py  # Ansatz circuits
+│       │   └── optimizer.py   # Classical optimizers
+│       ├── classical/         # Classical baselines
+│       │   ├── energy.py      # Energy calculations
+│       │   └── baseline.py    # SA, exact enumeration
+│       ├── models/            # High-level APIs
+│       │   ├── vqe_model.py
+│       │   └── qaoa_model.py
+│       └── analysis/          # Analysis tools
+│           ├── metrics.py     # RMSD, energy gap
+│           └── plots.py       # Visualization
+├── notebooks/                 # Jupyter notebooks
+│   ├── 01_quick_start.ipynb
+│   ├── 02_vqe_tutorial.ipynb
+│   ├── 03_qaoa_tutorial.ipynb
+│   └── 03_benchmarking.ipynb
+├── tests/                     # Unit tests
+├── data/                      # Example datasets
+├── results/                   # Output directory
+├── requirements.txt
+├── setup.py
+└── README.md
+```
+
+## 📓 Notebooks
+
+Interactive Jupyter notebooks demonstrating key functionality:
+
+1. **[Quick Start Guide](https://github.com/Tommaso-R-Marena/quantum-protein-folding-research/blob/main/notebooks/01_quick_start.ipynb)** - Basic usage and examples ([Open in Colab](https://colab.research.google.com/github/Tommaso-R-Marena/quantum-protein-folding-research/blob/main/notebooks/01_quick_start.ipynb))
+2. **[VQE Tutorial](https://github.com/Tommaso-R-Marena/quantum-protein-folding-research/blob/main/notebooks/02_vqe_tutorial.ipynb)** - Deep dive into VQE for protein folding ([Open in Colab](https://colab.research.google.com/github/Tommaso-R-Marena/quantum-protein-folding-research/blob/main/notebooks/02_vqe_tutorial.ipynb))
+3. **[QAOA Tutorial](https://github.com/Tommaso-R-Marena/quantum-protein-folding-research/blob/main/notebooks/03_qaoa_tutorial.ipynb)** - QAOA implementation and optimization ([Open in Colab](https://colab.research.google.com/github/Tommaso-R-Marena/quantum-protein-folding-research/blob/main/notebooks/03_qaoa_tutorial.ipynb))
+4. **[Benchmarking Suite](https://github.com/Tommaso-R-Marena/quantum-protein-folding-research/blob/main/notebooks/03_benchmarking.ipynb)** - Quantum vs. classical comparison ([Open in Colab](https://colab.research.google.com/github/Tommaso-R-Marena/quantum-protein-folding-research/blob/main/notebooks/03_benchmarking.ipynb))
+
+To run notebooks locally:
 
 ```bash
-# Run all tests
-pytest tests/
-
-# Run specific test module
-pytest tests/test_vqe.py -v
-
-# Run with coverage
-pytest --cov=quantum_protein_folding tests/
+jupyter notebook notebooks/
 ```
 
----
+## 📖 Documentation
 
-## 📈 Benchmarking
+### Algorithm Overview
 
-```bash
-# Run benchmarks for scaling analysis
-python benchmarks/scaling_benchmark.py
+**VQE (Variational Quantum Eigensolver)**
 
-# Compare quantum vs classical
-python benchmarks/quantum_vs_classical.py
+Minimizes the expectation value of the folding Hamiltonian:
 
-# Noise robustness analysis
-python benchmarks/noise_analysis.py
+```
+E(θ) = ⟨ψ(θ)|H|ψ(θ)⟩
 ```
 
----
+where `H = H_contact + λ·H_backbone + μ·H_bias`
+
+**QAOA (Quantum Approximate Optimization Algorithm)**
+
+Approximates the ground state via alternating cost and mixer unitaries:
+
+```
+|ψ(β, γ)⟩ = ∏ₚ e^(-iβₚH_M) e^(-iγₚH_C) |+⟩^⊗n
+```
+
+### Encoding Schemes
+
+1. **Turn-Based Encoding**: Encodes conformations as sequences of directional turns
+   - Qubits: `(N-1) · ⌈log₂(2d)⌉` for dimension `d`
+   - Natural for lattice walks
+
+2. **Binary Position Encoding**: Encodes each residue position in binary
+   - Qubits: `N · d · ⌈log₂(L)⌉` for lattice size `L`
+   - Direct spatial representation
+
+### Energy Model
+
+Total energy functional:
+
+```
+E = ∑ᵢⱼ εᵢⱼ·δ(rᵢ,rⱼ) + λ·∑ᵢ(|rᵢ₊₁-rᵢ|-1)² + μ·∑ᵢ|rᵢ|²
+```
+
+- **Contact term**: Miyazawa-Jernigan potentials
+- **Backbone term**: Connectivity constraints
+- **Bias term**: Compactness regularization
+
+## 🔬 Research Context
+
+This project investigates the potential for quantum advantage in protein structure prediction, a fundamental problem in computational biology. Key research questions:
+
+1. **Scalability**: How do quantum algorithms scale compared to classical methods?
+2. **Accuracy**: Can quantum approaches find lower-energy conformations?
+3. **NISQ Viability**: Are current/near-term quantum devices sufficient?
+4. **Encoding Efficiency**: Which lattice encoding schemes are most effective?
+
+### Related Publications
+
+*Preprint and publications coming soon*
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please:
+Contributions are welcome! Areas of interest:
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+- Additional encoding schemes
+- Novel ansatz designs
+- Noise mitigation strategies
+- Integration with real protein databases
+- Performance optimizations
 
----
+Please open an issue or pull request on [GitHub](https://github.com/Tommaso-R-Marena/quantum-protein-folding-research).
 
 ## 📝 Citation
 
 If you use this code in your research, please cite:
 
 ```bibtex
-@software{marena2026quantum,
+@software{quantumfold_advantage,
   author = {Marena, Tommaso R.},
-  title = {Quantum Protein Folding: VQE and QAOA Implementations},
+  title = {QuantumFold-Advantage: Quantum Algorithms for Protein Folding},
   year = {2026},
-  institution = {The Catholic University of America},
-  url = {https://github.com/Tommaso-R-Marena/quantum-protein-folding-research}
+  url = {https://github.com/Tommaso-R-Marena/quantum-protein-folding-research},
+  institution = {The Catholic University of America}
 }
 ```
 
----
-
-## 📬 Contact
-
-**Tommaso R. Marena**  
-*Undergraduate Researcher*  
-The Catholic University of America  
-📧 [marena@cua.edu](mailto:marena@cua.edu)  
-🔗 [GitHub](https://github.com/Tommaso-R-Marena)
-
----
-
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](https://github.com/Tommaso-R-Marena/quantum-protein-folding-research/blob/main/LICENSE) file for details.
+
+## 📧 Contact
+
+**Tommaso R. Marena**
+- Email: [marena@cua.edu](mailto:marena@cua.edu)
+- GitHub: [@Tommaso-R-Marena](https://github.com/Tommaso-R-Marena)
+- Institution: [The Catholic University of America](https://www.catholic.edu/)
 
 ---
 
-## 🙏 Acknowledgments
-
-- **IBM Quantum** for Qiskit framework
-- **The Catholic University of America** for research support
-- **PennyLane team** for quantum computing inspiration
-- Classical protein folding community for benchmark datasets
-
----
-
-## 🔗 Related Work
-
-- [Qiskit Documentation](https://qiskit.org/documentation/)
-- [VQE Tutorial](https://qiskit.org/textbook/ch-applications/vqe-molecules.html)
-- [QAOA Tutorial](https://qiskit.org/textbook/ch-applications/qaoa.html)
-- [Protein Folding on Lattices](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3985476/)
-
----
-
-## 📊 Performance Highlights
-
-| Sequence Length | Qubits | VQE Time (s) | Classical Time (s) | Energy Gap |
-|----------------|--------|--------------|-------------------|------------|
-| 4              | 6      | 2.3          | 0.8               | +2.1%      |
-| 6              | 10     | 5.7          | 2.4               | +3.4%      |
-| 8              | 14     | 12.4         | 6.1               | +1.8%      |
-| 10             | 18     | 28.9         | 15.3              | +2.9%      |
-
-*Results on AerSimulator with 1024 shots, COBYLA optimizer*
-
----
-
-**Made with ❤️ and quantum computing at CUA**
+*This research is part of ongoing work at The Catholic University of America exploring quantum computing applications in computational biology and chemistry.*
