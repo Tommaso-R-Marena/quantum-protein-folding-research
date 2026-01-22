@@ -1,67 +1,55 @@
-"""Setup configuration for quantum_protein_folding package."""
-
 from setuptools import setup, find_packages
-import os
 
-# Read long description from README
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
-# Read requirements
-with open("requirements.txt", "r", encoding="utf-8") as fh:
-    requirements = [line.strip() for line in fh if line.strip() and not line.startswith("#")]
-
 setup(
-    name="quantum_protein_folding",
+    name="quantum-protein-folding",
     version="0.1.0",
     author="Tommaso R. Marena",
-    author_email="tommaso.marena@example.com",
-    description="NISQ-compatible quantum algorithms for protein structure prediction",
+    author_email="marena@cua.edu",
+    description="Quantum algorithms for lattice protein folding using VQE and QAOA",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/Tommaso-R-Marena/quantum-protein-folding-research",
     project_urls={
         "Bug Tracker": "https://github.com/Tommaso-R-Marena/quantum-protein-folding-research/issues",
-        "Documentation": "https://quantum-protein-folding-research.readthedocs.io",
+        "Documentation": "https://github.com/Tommaso-R-Marena/quantum-protein-folding-research/blob/main/README.md",
         "Source Code": "https://github.com/Tommaso-R-Marena/quantum-protein-folding-research",
     },
-    package_dir={"":  "src"},
+    package_dir={"": "src"},
     packages=find_packages(where="src"),
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Science/Research",
-        "Topic :: Scientific/Engineering :: Bio-Informatics",
         "Topic :: Scientific/Engineering :: Physics",
+        "Topic :: Scientific/Engineering :: Chemistry",
+        "Topic :: Scientific/Engineering :: Bio-Informatics",
         "License :: OSI Approved :: MIT License",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
-        "Operating System :: OS Independent",
+        "Programming Language :: Python :: 3.12",
     ],
-    python_requires=">=3.9",
-    install_requires=requirements,
+    python_requires=">=3.10",
+    install_requires=[
+        "qiskit>=1.0.0",
+        "qiskit-aer>=0.13.0",
+        "numpy>=1.24.0",
+        "scipy>=1.10.0",
+        "matplotlib>=3.7.0",
+        "biopython>=1.81",
+    ],
     extras_require={
         "dev": [
             "pytest>=7.3.0",
-            "pytest-cov>=4.0.0",
-            "black>=23.3.0",
-            "flake8>=6.0.0",
-            "mypy>=1.2.0",
-            "isort>=5.12.0",
+            "pytest-cov>=4.1.0",
+            "jupyter>=1.0.0",
+            "ipython>=8.12.0",
         ],
-        "docs": [
-            "sphinx>=6.2.0",
-            "sphinx-rtd-theme>=1.2.0",
-            "nbsphinx>=0.9.0",
+        "viz": [
+            "seaborn>=0.12.0",
+            "pandas>=2.0.0",
         ],
     },
-    entry_points={
-        "console_scripts": [
-            "qpf-benchmark=quantum_protein_folding.cli:benchmark",
-            "qpf-fold=quantum_protein_folding.cli:fold",
-        ],
-    },
-    include_package_data=True,
-    zip_safe=False,
 )

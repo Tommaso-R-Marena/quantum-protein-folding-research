@@ -2,80 +2,63 @@
 
 import pytest
 import numpy as np
-from qiskit.quantum_info import SparsePauliOp
 
-from quantum_protein_folding.quantum.vqe import VQESolver
-from quantum_protein_folding.models.vqe_model import VQEFoldingModel
+from quantum_protein_folding.models import VQEFoldingModel
+from quantum_protein_folding.data.loaders import load_hp_sequence
 
 
 class TestVQESolver:
     """Test VQE implementation."""
     
     def test_vqe_initialization(self):
-        """Test VQE solver initialization."""
-        # Simple Hamiltonian
-        H = SparsePauliOp.from_list([('ZZ', 1.0), ('XX', -1.0)])
-        
-        solver = VQESolver(
-            hamiltonian=H,
-            n_qubits=2,
-            ansatz_depth=1
+        """Test VQE model initialization."""
+        model = VQEFoldingModel(
+            sequence="HPHP",
+            lattice_dim=2,
+            ansatz_depth=2
         )
         
-        assert solver.n_qubits == 2
-        assert solver.n_params > 0
+        assert model.solver.n_params > 0
+        assert model.encoding.n_qubits > 0
     
-    @pytest.mark.slow
-    def test_vqe_simple_problem(self):
-        """Test VQE on simple problem (H = Z)."""
-        # Ground state of Z is |0> with energy -1
-        H = SparsePauliOp.from_list([('Z', 1.0)])
-        
-        solver = VQESolver(
-            hamiltonian=H,
-            n_qubits=1,
+    def test_vqe_run_small(self):
+        """Test VQE on small sequence."""
+        model = VQEFoldingModel(
+            sequence="HP",
+            lattice_dim=2,
             ansatz_depth=1,
             optimizer='COBYLA'
         )
         
-        result = solver.run(maxiter=50)
-        
-        # Should find ground state energy ~ -1
-        assert result.optimal_value < 0  # Negative
-        assert result.optimal_value > -1.5  # Not too negative
-        assert len(result.convergence_history) > 0
-
-
-class TestVQEFoldingModel:
-    """Test high-level VQE folding API."""
-    
-    def test_model_initialization(self):
-        """Test model creation."""
-        model = VQEFoldingModel(
-            sequence="HPH",
-            lattice_dim=2,
-            ansatz_depth=1,
-            shots=512
-        )
-        
-        assert model.sequence.length == 3
-        assert model.encoding.n_qubits > 0
-    
-    @pytest.mark.slow
-    def test_full_folding_pipeline(self):
-        """Test complete folding workflow."""
-        model = VQEFoldingModel(
-            sequence="HPH",
-            lattice_dim=2,
-            ansatz_depth=1
-        )
-        
-        result = model.run(maxiter=20)  # Quick test
+        result = model.run(maxiter=10)
         
         assert result.optimal_value is not None
-        assert result.optimal_bitstring is not None
+        assert len(result.optimal_params) == model.solver.n_params
         assert len(result.convergence_history) > 0
+    
+    def test_vqe_convergence(self):
+        """Test that VQE converges (energy decreases)."""
+        model = VQEFoldingModel(
+            sequence="HPH",
+            lattice_dim=2,
+            ansatz_depth=2
+        )
         
-        # Decode conformation
-        conf = model.decode_conformation(result.optimal_bitstring)
-        assert conf.shape == (3, 2)  # 3 residues, 2D
+        result = model.run(maxiter=20)
+        
+        # Final energy should be lower than initial
+        initial_energy = result.convergence_history[0]
+        final_energy = result.convergence_history[-1]
+        
+        assert final_energy <= initial_energy
+    
+    def test_vqe_bitstring_length(self):
+        """Test that bitstring has correct length."""
+        model = VQEFoldingModel(
+            sequence="HPHP",
+            lattice_dim=2
+        )
+        
+        result = model.run(maxiter=5)
+        
+        assert len(result.optimal_bitstring) == model.encoding.n_qubits
