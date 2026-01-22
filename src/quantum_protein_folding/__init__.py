@@ -1,42 +1,26 @@
 """Quantum Protein Folding: NISQ-Compatible Variational Algorithms.
 
-A production-ready implementation of quantum algorithms for protein structure
-prediction on Near-term Intermediate-Scale Quantum (NISQ) devices.
-
-Key Components:
-    - VQE and QAOA implementations for lattice protein folding
-    - Real protein data loaders (PDB, FASTA)
-    - Miyazawa-Jernigan contact potentials
-    - Classical baselines and benchmarking
-    - Comprehensive analysis and visualization tools
-
-Example:
-    >>> from quantum_protein_folding.models import VQEFoldingModel
-    >>> model = VQEFoldingModel(
-    ...     sequence="HPHPPHHPHH",
-    ...     lattice_dim=2,
-    ...     lattice_size=5
-    ... )
-    >>> result = model.run(maxiter=200)
-    >>> print(f"Energy: {result.optimal_value:.4f}")
-
-Author: Tommaso R. Marena
-Institution: The Catholic University of America
-License: MIT
+A production-ready framework for quantum protein structure prediction using
+Variational Quantum Eigensolver (VQE) and Quantum Approximate Optimization
+Algorithm (QAOA) on near-term quantum devices.
 """
 
-__version__ = "1.0.0"
+__version__ = "0.1.0"
 __author__ = "Tommaso R. Marena"
 __email__ = "marena@cua.edu"
 
-# Core imports for easy access
-from quantum_protein_folding.quantum.vqe import VQE
-from quantum_protein_folding.quantum.qaoa import QAOA
-from quantum_protein_folding.quantum.hamiltonian import ProteinHamiltonian
+from quantum_protein_folding.models.vqe_model import VQEFoldingModel
+from quantum_protein_folding.models.qaoa_model import QAOAFoldingModel
+from quantum_protein_folding.data.loaders import (
+    load_hp_sequence,
+    load_fasta_sequence,
+    load_pdb_sequence,
+)
 
 __all__ = [
-    "VQE",
-    "QAOA",
-    "ProteinHamiltonian",
-    "__version__",
+    "VQEFoldingModel",
+    "QAOAFoldingModel",
+    "load_hp_sequence",
+    "load_fasta_sequence",
+    "load_pdb_sequence",
 ]

@@ -1,30 +1,21 @@
-"""Data loading and preprocessing for protein sequences.
-
-This module provides utilities for:
-    - Loading protein sequences from PDB and FASTA files
-    - Preprocessing sequences for lattice models
-    - Miyazawa-Jernigan contact potential matrices
-    - Hydrophobic-polar (HP) model sequences
-"""
+"""Data loading and preprocessing modules."""
 
 from quantum_protein_folding.data.loaders import (
-    load_pdb_sequence,
-    load_fasta_sequence,
     load_hp_sequence,
+    load_fasta_sequence,
+    load_pdb_sequence,
 )
 from quantum_protein_folding.data.preprocess import (
     map_to_lattice,
-    encode_sequence,
-    LatticeData,
+    encode_binary_positions,
+    encode_turn_directions,
 )
-from quantum_protein_folding.data.mj_matrix import get_mj_matrix
 
 __all__ = [
-    "load_pdb_sequence",
-    "load_fasta_sequence",
     "load_hp_sequence",
+    "load_fasta_sequence",
+    "load_pdb_sequence",
     "map_to_lattice",
-    "encode_sequence",
-    "LatticeData",
-    "get_mj_matrix",
+    "encode_binary_positions",
+    "encode_turn_directions",
 ]

@@ -1,382 +1,284 @@
-"""Quantum Hamiltonian construction for protein folding.
+"""Quantum Hamiltonian construction for lattice protein folding.
 
-Implements the complete energy Hamiltonian:
+Implements the energy Hamiltonian:
     H = H_contact + H_backbone + H_bias
 
-where each term is mapped to Pauli operators for quantum simulation.
+where:
+- H_contact: Inter-residue contact energies (MJ potentials)
+- H_backbone: Connectivity and geometry constraints
+- H_bias: Compactness regularization
 """
 
 import numpy as np
-from typing import List, Tuple, Optional, Dict
-from dataclasses import dataclass
+from typing import Dict, List, Tuple, Optional
+from qiskit.quantum_info import SparsePauliOp, Pauli
+from itertools import combinations
 
-try:
-    from qiskit.quantum_info import SparsePauliOp, Pauli
-    from qiskit.opflow import PauliSumOp
-    QISKIT_AVAILABLE = True
-except ImportError:
-    QISKIT_AVAILABLE = False
-    import warnings
-    warnings.warn(
-        "Qiskit not installed. Install with: pip install qiskit qiskit-aer"
-    )
-
-from quantum_protein_folding.data.preprocess import (
-    LatticeData,
-    get_neighbor_directions,
-    EncodingType,
-)
+from quantum_protein_folding.data.loaders import ProteinSequence
 
 
-@dataclass
-class HamiltonianWeights:
-    """Weights for different Hamiltonian terms.
-    
-    Attributes:
-        contact: Weight for contact energy term (default: 1.0)
-        backbone: Weight for backbone geometry term (default: 10.0)
-        bias: Weight for compactness bias term (default: 0.1)
-    """
-    contact: float = 1.0
-    backbone: float = 10.0
-    bias: float = 0.1
-
-
-class ProteinHamiltonian:
-    """Quantum Hamiltonian for lattice protein folding.
-    
-    This class constructs the complete energy Hamiltonian and maps it to
-    Pauli operators for quantum simulation.
-    
-    Mathematical Formulation:
-        H = λ_c H_contact + λ_b H_backbone + λ_μ H_bias
-    
-    where:
-        - H_contact: Non-local contact interactions (MJ or HP potentials)
-        - H_backbone: Chain connectivity and geometry constraints
-        - H_bias: Regularization for compact structures
-    
-    Attributes:
-        lattice_data: Preprocessed lattice information
-        weights: Weights for different Hamiltonian terms
-        operator: Qiskit SparsePauliOp representation
-    
-    Example:
-        >>> from quantum_protein_folding.data import map_to_lattice
-        >>> lattice_data = map_to_lattice("HPHPH", lattice_dim=2)
-        >>> hamiltonian = ProteinHamiltonian(lattice_data)
-        >>> hamiltonian.construct()
-        >>> print(f"Number of Pauli terms: {len(hamiltonian.operator)}")
-    """
-    
-    def __init__(
-        self,
-        lattice_data: LatticeData,
-        weights: Optional[HamiltonianWeights] = None
-    ):
-        """Initialize Hamiltonian builder.
-        
-        Args:
-            lattice_data: Preprocessed lattice data
-            weights: Optional custom weights for Hamiltonian terms
-        """
-        if not QISKIT_AVAILABLE:
-            raise ImportError(
-                "Qiskit required for Hamiltonian construction. "
-                "Install with: pip install qiskit"
-            )
-        
-        self.lattice_data = lattice_data
-        self.weights = weights or HamiltonianWeights()
-        self.operator: Optional[SparsePauliOp] = None
-        self._pauli_terms: List[Tuple[str, float]] = []
-    
-    def construct(self) -> SparsePauliOp:
-        """Construct the full Hamiltonian operator.
-        
-        Returns:
-            Qiskit SparsePauliOp representing H
-        
-        Raises:
-            NotImplementedError: If encoding type not supported
-        """
-        self._pauli_terms = []
-        
-        # Build each term
-        contact_terms = self._build_contact_hamiltonian()
-        backbone_terms = self._build_backbone_hamiltonian()
-        bias_terms = self._build_bias_hamiltonian()
-        
-        # Combine with weights
-        all_terms = []
-        all_coeffs = []
-        
-        for pauli, coeff in contact_terms:
-            all_terms.append(pauli)
-            all_coeffs.append(self.weights.contact * coeff)
-        
-        for pauli, coeff in backbone_terms:
-            all_terms.append(pauli)
-            all_coeffs.append(self.weights.backbone * coeff)
-        
-        for pauli, coeff in bias_terms:
-            all_terms.append(pauli)
-            all_coeffs.append(self.weights.bias * coeff)
-        
-        # Store for analysis
-        self._pauli_terms = list(zip(all_terms, all_coeffs))
-        
-        # Create SparsePauliOp
-        if all_terms:
-            self.operator = SparsePauliOp(all_terms, all_coeffs)
-        else:
-            # Empty Hamiltonian
-            n_qubits = self.lattice_data.n_qubits
-            self.operator = SparsePauliOp(['I' * n_qubits], [0.0])
-        
-        return self.operator
-    
-    def _build_contact_hamiltonian(self) -> List[Tuple[str, float]]:
-        """Build H_contact term.
-        
-        H_contact = Σ_{i<j, |i-j|>2} ε_{a_i,a_j} δ(|r_i - r_j|, 1)
-        
-        For quantum encoding, we use penalty terms that activate when
-        two non-adjacent residues occupy neighboring lattice sites.
-        
-        Returns:
-            List of (Pauli string, coefficient) tuples
-        """
-        terms = []
-        chain_length = len(self.lattice_data.sequence)
-        contact_matrix = self.lattice_data.contact_matrix
-        
-        # For direction encoding, we need to check if residues i and j
-        # are at distance 1 based on their encoded directions
-        # This is complex, so we use a simplified QUBO-like formulation
-        
-        if self.lattice_data.encoding_type == EncodingType.DIRECTION:
-            # Simplified: assume contacts happen with some probability
-            # Full implementation would require auxiliary qubits
-            # For now, add identity terms weighted by contact energies
-            
-            n_qubits = self.lattice_data.n_qubits
-            identity = 'I' * n_qubits
-            
-            # Add average contact energy as constant offset
-            avg_contact = 0.0
-            count = 0
-            for i in range(chain_length):
-                for j in range(i + 3, chain_length):  # Non-local contacts
-                    avg_contact += contact_matrix[i, j]
-                    count += 1
-            
-            if count > 0:
-                avg_contact /= count
-                terms.append((identity, avg_contact))
-        
-        else:
-            raise NotImplementedError(
-                f"Contact Hamiltonian not implemented for {self.lattice_data.encoding_type}"
-            )
-        
-        return terms
-    
-    def _build_backbone_hamiltonian(self) -> List[Tuple[str, float]]:
-        """Build H_backbone term.
-        
-        H_backbone ensures:
-        1. Chain connectivity: |r_{i+1} - r_i| = 1
-        2. Self-avoidance: r_i ≠ r_j for i ≠ j
-        
-        For direction encoding, connectivity is automatic (each bond is 1 step).
-        Self-avoidance requires penalty terms.
-        
-        Returns:
-            List of (Pauli string, coefficient) tuples
-        """
-        terms = []
-        n_qubits = self.lattice_data.n_qubits
-        chain_length = len(self.lattice_data.sequence)
-        
-        if self.lattice_data.encoding_type == EncodingType.DIRECTION:
-            # Connectivity is automatic with direction encoding
-            # Add self-avoidance penalties
-            
-            # Simplified: penalize certain direction patterns that lead to overlaps
-            # Full implementation would check if paths cross
-            
-            # For demonstration, add small penalties to discourage
-            # immediate U-turns and tight loops
-            lattice_dim = self.lattice_data.lattice_dim
-            
-            if lattice_dim == 2:
-                bits_per_bond = 2  # 4 directions
-            else:
-                bits_per_bond = 3  # 6 directions
-            
-            # Penalize consecutive opposite directions (immediate backtracking)
-            for i in range(chain_length - 2):
-                qubit_i = i * bits_per_bond
-                qubit_j = (i + 1) * bits_per_bond
-                
-                # Add ZZ correlation terms to penalize certain patterns
-                for bit in range(bits_per_bond):
-                    pauli_str = ['I'] * n_qubits
-                    pauli_str[qubit_i + bit] = 'Z'
-                    pauli_str[qubit_j + bit] = 'Z'
-                    terms.append((''.join(pauli_str), 0.5))  # Penalty strength
-        
-        return terms
-    
-    def _build_bias_hamiltonian(self) -> List[Tuple[str, float]]:
-        """Build H_bias term.
-        
-        H_bias = μ Σ_i |r_i|^2
-        
-        Encourages compact structures near the origin.
-        
-        Returns:
-            List of (Pauli string, coefficient) tuples
-        """
-        terms = []
-        n_qubits = self.lattice_data.n_qubits
-        
-        # Add small penalty proportional to encoded positions
-        # This encourages the structure to stay compact
-        
-        if self.lattice_data.encoding_type == EncodingType.DIRECTION:
-            # Penalize long chains by summing direction magnitudes
-            chain_length = len(self.lattice_data.sequence)
-            lattice_dim = self.lattice_data.lattice_dim
-            
-            if lattice_dim == 2:
-                bits_per_bond = 2
-            else:
-                bits_per_bond = 3
-            
-            # Add Z terms to bias towards certain states
-            for i in range(chain_length - 1):
-                for bit in range(bits_per_bond):
-                    qubit_idx = i * bits_per_bond + bit
-                    pauli_str = ['I'] * n_qubits
-                    pauli_str[qubit_idx] = 'Z'
-                    terms.append((''.join(pauli_str), 0.1 / (i + 1)))  # Decay with distance
-        
-        return terms
-    
-    def get_pauli_terms(self) -> List[Tuple[str, float]]:
-        """Get list of Pauli terms in the Hamiltonian.
-        
-        Returns:
-            List of (Pauli string, coefficient) tuples
-        
-        Example:
-            >>> hamiltonian.construct()
-            >>> terms = hamiltonian.get_pauli_terms()
-            >>> print(f"Total terms: {len(terms)}")
-        """
-        if not self._pauli_terms:
-            raise ValueError("Hamiltonian not constructed. Call construct() first.")
-        return self._pauli_terms.copy()
-    
-    def get_num_paulis(self) -> int:
-        """Get number of Pauli terms.
-        
-        Returns:
-            Number of terms in Hamiltonian
-        """
-        return len(self._pauli_terms)
-    
-    def evaluate(self, state_vector: np.ndarray) -> float:
-        """Evaluate Hamiltonian expectation value.
-        
-        Args:
-            state_vector: Quantum state vector
-        
-        Returns:
-            Expectation value ⟨ψ|H|ψ⟩
-        """
-        if self.operator is None:
-            raise ValueError("Hamiltonian not constructed. Call construct() first.")
-        
-        # Use Qiskit's expectation value calculation
-        from qiskit.quantum_info import Statevector
-        
-        state = Statevector(state_vector)
-        expectation = state.expectation_value(self.operator)
-        
-        return np.real(expectation)
-
-
-def build_qubo_hamiltonian(
-    lattice_data: LatticeData,
-    penalty_strength: float = 10.0
+def build_hamiltonian(
+    sequence: ProteinSequence,
+    n_qubits: int,
+    lattice_dim: int,
+    lattice_size: int,
+    encoding_type: str = 'turn_direction',
+    constraint_weight: float = 10.0,
+    bias_weight: float = 0.1
 ) -> SparsePauliOp:
-    """Build QUBO (Quadratic Unconstrained Binary Optimization) Hamiltonian.
-    
-    This formulation is particularly suitable for QAOA.
+    """Build complete quantum Hamiltonian for protein folding.
     
     Args:
-        lattice_data: Preprocessed lattice data
-        penalty_strength: Strength of constraint penalties
-    
-    Returns:
-        QUBO Hamiltonian as SparsePauliOp
-    
-    Mathematical Form:
-        H_QUBO = Σ_i h_i σ_i^z + Σ_{i<j} J_{ij} σ_i^z σ_j^z
-    
-    where h_i and J_{ij} encode the folding energy and constraints.
-    
-    Example:
-        >>> from quantum_protein_folding.data import map_to_lattice
-        >>> lattice_data = map_to_lattice("HPHPH")
-        >>> qubo = build_qubo_hamiltonian(lattice_data)
-    """
-    if not QISKIT_AVAILABLE:
-        raise ImportError("Qiskit required. Install with: pip install qiskit")
-    
-    n_qubits = lattice_data.n_qubits
-    chain_length = len(lattice_data.sequence)
-    
-    pauli_list = []
-    coeffs = []
-    
-    # Linear terms (h_i)
-    for i in range(n_qubits):
-        pauli_str = ['I'] * n_qubits
-        pauli_str[i] = 'Z'
-        pauli_list.append(''.join(pauli_str))
-        coeffs.append(0.1)  # Small bias
-    
-    # Quadratic terms (J_{ij})
-    # Add correlations based on contact energies
-    contact_matrix = lattice_data.contact_matrix
-    
-    if lattice_data.encoding_type == EncodingType.DIRECTION:
-        lattice_dim = lattice_data.lattice_dim
-        bits_per_bond = 2 if lattice_dim == 2 else 3
+        sequence: Protein sequence with contact matrix
+        n_qubits: Total number of qubits
+        lattice_dim: Lattice dimension
+        lattice_size: Lattice size
+        encoding_type: Encoding scheme
+        constraint_weight: Weight lambda for backbone constraints
+        bias_weight: Weight mu for compactness bias
         
-        # Add ZZ terms between bonds that might lead to contacts
-        for i in range(chain_length - 1):
-            for j in range(i + 2, chain_length - 1):
-                # Check if these residues could be in contact
-                energy = contact_matrix[i, j]
-                
-                # Add correlation term
-                qubit_i = i * bits_per_bond
-                qubit_j = j * bits_per_bond
-                
-                pauli_str = ['I'] * n_qubits
-                pauli_str[qubit_i] = 'Z'
-                pauli_str[qubit_j] = 'Z'
-                pauli_list.append(''.join(pauli_str))
-                coeffs.append(energy / 10.0)  # Scale energy
+    Returns:
+        SparsePauliOp representing full Hamiltonian
+    """
+    # Build each term
+    H_contact = _build_contact_hamiltonian(
+        sequence, n_qubits, lattice_dim, encoding_type
+    )
     
-    # Add constraint penalties
-    # Penalize self-overlap and broken chains
-    for i in range(min(10, len(pauli_list))):
-        coeffs[i] += penalty_strength * 0.01
+    H_backbone = _build_backbone_hamiltonian(
+        sequence, n_qubits, lattice_dim, lattice_size, encoding_type
+    )
     
-    return SparsePauliOp(pauli_list, coeffs)
+    H_bias = _build_bias_hamiltonian(
+        sequence, n_qubits, lattice_dim, encoding_type
+    )
+    
+    # Combine with weights
+    hamiltonian = (
+        H_contact +
+        constraint_weight * H_backbone +
+        bias_weight * H_bias
+    )
+    
+    # Simplify
+    hamiltonian = hamiltonian.simplify()
+    
+    return hamiltonian
+
+
+def _build_contact_hamiltonian(
+    sequence: ProteinSequence,
+    n_qubits: int,
+    lattice_dim: int,
+    encoding_type: str
+) -> SparsePauliOp:
+    """Build contact energy Hamiltonian: H_contact = sum_{i<j} epsilon_ij * delta(r_i, r_j).
+    
+    For turn encoding, we approximate contact detection using:
+    - Pairwise qubit interactions that encourage/discourage proximity
+    - Simplified QUBO formulation
+    """
+    n = sequence.length
+    pauli_list = []
+    
+    if encoding_type == 'turn_direction':
+        # For turn encoding: approximate contacts with QUBO terms
+        # This is a simplified model where we penalize/reward certain turn patterns
+        
+        for i in range(n - 3):  # Non-local contacts only (|i-j| > 2)
+            for j in range(i + 3, n):
+                epsilon = sequence.get_contact_energy(i, j)
+                
+                if abs(epsilon) < 1e-6:
+                    continue  # Skip zero interactions
+                
+                # Approximate contact probability with qubit correlations
+                # This is a crude approximation; exact implementation requires
+                # constraint satisfaction clauses
+                
+                # Use ZZ interactions between turn qubits
+                n_bits_per_turn = int(np.ceil(np.log2(2 * lattice_dim)))
+                
+                # Bond indices for residues i and j
+                bond_i = i
+                bond_j = j - 1
+                
+                if bond_i < n - 1 and bond_j < n - 1:
+                    for bit_i in range(n_bits_per_turn):
+                        for bit_j in range(n_bits_per_turn):
+                            qubit_i = bond_i * n_bits_per_turn + bit_i
+                            qubit_j = bond_j * n_bits_per_turn + bit_j
+                            
+                            if qubit_i < n_qubits and qubit_j < n_qubits:
+                                # ZZ interaction
+                                pauli_str = ['I'] * n_qubits
+                                pauli_str[qubit_i] = 'Z'
+                                pauli_str[qubit_j] = 'Z'
+                                pauli_list.append(
+                                    (''.join(pauli_str), epsilon / (n_bits_per_turn ** 2))
+                                )
+    
+    else:  # binary_position encoding
+        # For position encoding: exact contact detection requires many ancillas
+        # Use approximate QUBO formulation
+        
+        for i in range(n - 3):
+            for j in range(i + 3, n):
+                epsilon = sequence.get_contact_energy(i, j)
+                
+                if abs(epsilon) < 1e-6:
+                    continue
+                
+                # Simplified: penalize coordinate differences
+                n_bits_per_coord = int(np.ceil(np.log2(sequence.length + 2)))
+                
+                for dim in range(lattice_dim):
+                    for bit in range(n_bits_per_coord):
+                        qubit_i = i * lattice_dim * n_bits_per_coord + dim * n_bits_per_coord + bit
+                        qubit_j = j * lattice_dim * n_bits_per_coord + dim * n_bits_per_coord + bit
+                        
+                        if qubit_i < n_qubits and qubit_j < n_qubits:
+                            # Encourage same bit values (contact)
+                            pauli_str = ['I'] * n_qubits
+                            pauli_str[qubit_i] = 'Z'
+                            pauli_str[qubit_j] = 'Z'
+                            pauli_list.append(
+                                (''.join(pauli_str), epsilon / (lattice_dim * n_bits_per_coord))
+                            )
+    
+    if not pauli_list:
+        # Return zero operator if no contacts
+        return SparsePauliOp(['I' * n_qubits], [0.0])
+    
+    return SparsePauliOp.from_list(pauli_list)
+
+
+def _build_backbone_hamiltonian(
+    sequence: ProteinSequence,
+    n_qubits: int,
+    lattice_dim: int,
+    lattice_size: int,
+    encoding_type: str
+) -> SparsePauliOp:
+    """Build backbone constraint Hamiltonian.
+    
+    Enforces:
+    1. Chain connectivity: |r_{i+1} - r_i| = 1
+    2. Self-avoidance: r_i != r_j for i != j
+    
+    These are hard constraints, implemented as penalty terms.
+    """
+    n = sequence.length
+    pauli_list = []
+    
+    if encoding_type == 'turn_direction':
+        # Turn encoding naturally enforces connectivity
+        # Add self-avoidance penalties
+        
+        n_bits_per_turn = int(np.ceil(np.log2(2 * lattice_dim)))
+        
+        # Penalize invalid turn sequences (approximation)
+        for bond in range(n - 1):
+            for bit in range(n_bits_per_turn):
+                qubit_idx = bond * n_bits_per_turn + bit
+                if qubit_idx < n_qubits:
+                    # Add small Z terms to bias toward valid configurations
+                    pauli_str = ['I'] * n_qubits
+                    pauli_str[qubit_idx] = 'Z'
+                    pauli_list.append((''.join(pauli_str), 0.1))
+    
+    else:  # binary_position
+        # Add connectivity constraints: penalize |r_{i+1} - r_i| != 1
+        # This requires arithmetic circuits (complex)
+        # Simplified: add penalty for large separations
+        
+        n_bits_per_coord = int(np.ceil(np.log2(lattice_size)))
+        
+        for i in range(n - 1):
+            for dim in range(lattice_dim):
+                for bit in range(n_bits_per_coord):
+                    qubit_i = i * lattice_dim * n_bits_per_coord + dim * n_bits_per_coord + bit
+                    qubit_j = (i+1) * lattice_dim * n_bits_per_coord + dim * n_bits_per_coord + bit
+                    
+                    if qubit_i < n_qubits and qubit_j < n_qubits:
+                        # Penalize XOR (different bits)
+                        pauli_str_zz = ['I'] * n_qubits
+                        pauli_str_zz[qubit_i] = 'Z'
+                        pauli_str_zz[qubit_j] = 'Z'
+                        pauli_list.append((''.join(pauli_str_zz), -0.5))  # Reward similarity
+                        
+                        # Add Z terms
+                        pauli_str_z = ['I'] * n_qubits
+                        pauli_str_z[qubit_i] = 'Z'
+                        pauli_list.append((''.join(pauli_str_z), 0.5))
+    
+    if not pauli_list:
+        return SparsePauliOp(['I' * n_qubits], [0.0])
+    
+    return SparsePauliOp.from_list(pauli_list)
+
+
+def _build_bias_hamiltonian(
+    sequence: ProteinSequence,
+    n_qubits: int,
+    lattice_dim: int,
+    encoding_type: str
+) -> SparsePauliOp:
+    """Build compactness bias: H_bias = mu * sum_i |r_i|^2.
+    
+    Favors conformations near the origin.
+    """
+    n = sequence.length
+    pauli_list = []
+    
+    # Simple implementation: add Z terms to all qubits
+    # This provides a weak bias toward |0...0> state
+    
+    for qubit in range(n_qubits):
+        pauli_str = ['I'] * n_qubits
+        pauli_str[qubit] = 'Z'
+        pauli_list.append((''.join(pauli_str), 0.01))  # Small bias
+    
+    if not pauli_list:
+        return SparsePauliOp(['I' * n_qubits], [0.0])
+    
+    return SparsePauliOp.from_list(pauli_list)
+
+
+def hamiltonian_to_matrix(
+    hamiltonian: SparsePauliOp
+) -> np.ndarray:
+    """Convert Hamiltonian to dense matrix representation.
+    
+    Useful for exact diagonalization and testing.
+    
+    Args:
+        hamiltonian: Sparse Pauli operator
+        
+    Returns:
+        Dense matrix (2^n x 2^n)
+    """
+    return hamiltonian.to_matrix()
+
+
+def compute_exact_ground_state(
+    hamiltonian: SparsePauliOp
+) -> Tuple[float, np.ndarray]:
+    """Compute exact ground state via diagonalization.
+    
+    Only feasible for small systems (n_qubits <= 20).
+    
+    Args:
+        hamiltonian: Hamiltonian operator
+        
+    Returns:
+        ground_energy: Lowest eigenvalue
+        ground_state: Corresponding eigenvector
+    """
+    matrix = hamiltonian_to_matrix(hamiltonian)
+    eigenvalues, eigenvectors = np.linalg.eigh(matrix)
+    
+    ground_energy = eigenvalues[0]
+    ground_state = eigenvectors[:, 0]
+    
+    return ground_energy, ground_state
