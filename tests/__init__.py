@@ -1,1 +1,1 @@
-"""Test suite for quantum protein folding."""
+"""Unit tests for quantum protein folding package."""
