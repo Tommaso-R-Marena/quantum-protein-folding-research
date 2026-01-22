@@ -3,6 +3,7 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![Qiskit](https://img.shields.io/badge/Qiskit-1.0+-6133BD.svg)](https://qiskit.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Tommaso-R-Marena/quantum-protein-folding-research/blob/main/notebooks/01_quick_start.ipynb)
 
 **Platform-agnostic quantum algorithms for protein structure prediction, exploring quantum advantage in computational biology.**
 
@@ -86,6 +87,14 @@ Core requirements:
 - `biopython >= 1.79` (for FASTA/PDB parsing)
 
 ## ⚡ Quick Start
+
+### 🎯 Try it in Google Colab
+
+The fastest way to get started is with our interactive Colab notebook:
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Tommaso-R-Marena/quantum-protein-folding-research/blob/main/notebooks/01_quick_start.ipynb)
+
+No installation required - just click and run!
 
 ### VQE for Protein Folding
 
@@ -251,7 +260,7 @@ quantum-protein-folding-research/
 │   ├── 01_quick_start.ipynb
 │   ├── 02_vqe_tutorial.ipynb
 │   ├── 03_qaoa_tutorial.ipynb
-│   └── 04_benchmarking.ipynb
+│   └── 03_benchmarking.ipynb
 ├── tests/                     # Unit tests
 ├── data/                      # Example datasets
 ├── results/                   # Output directory
@@ -264,12 +273,12 @@ quantum-protein-folding-research/
 
 Interactive Jupyter notebooks demonstrating key functionality:
 
-1. **[Quick Start Guide](notebooks/01_quick_start.ipynb)** - Basic usage and examples
-2. **[VQE Tutorial](notebooks/02_vqe_tutorial.ipynb)** - Deep dive into VQE for protein folding
-3. **[QAOA Tutorial](notebooks/03_qaoa_tutorial.ipynb)** - QAOA implementation and optimization
-4. **[Benchmarking Suite](notebooks/04_benchmarking.ipynb)** - Quantum vs. classical comparison
+1. **[Quick Start Guide](https://github.com/Tommaso-R-Marena/quantum-protein-folding-research/blob/main/notebooks/01_quick_start.ipynb)** - Basic usage and examples ([Open in Colab](https://colab.research.google.com/github/Tommaso-R-Marena/quantum-protein-folding-research/blob/main/notebooks/01_quick_start.ipynb))
+2. **[VQE Tutorial](https://github.com/Tommaso-R-Marena/quantum-protein-folding-research/blob/main/notebooks/02_vqe_tutorial.ipynb)** - Deep dive into VQE for protein folding ([Open in Colab](https://colab.research.google.com/github/Tommaso-R-Marena/quantum-protein-folding-research/blob/main/notebooks/02_vqe_tutorial.ipynb))
+3. **[QAOA Tutorial](https://github.com/Tommaso-R-Marena/quantum-protein-folding-research/blob/main/notebooks/03_qaoa_tutorial.ipynb)** - QAOA implementation and optimization ([Open in Colab](https://colab.research.google.com/github/Tommaso-R-Marena/quantum-protein-folding-research/blob/main/notebooks/03_qaoa_tutorial.ipynb))
+4. **[Benchmarking Suite](https://github.com/Tommaso-R-Marena/quantum-protein-folding-research/blob/main/notebooks/03_benchmarking.ipynb)** - Quantum vs. classical comparison ([Open in Colab](https://colab.research.google.com/github/Tommaso-R-Marena/quantum-protein-folding-research/blob/main/notebooks/03_benchmarking.ipynb))
 
-To run notebooks:
+To run notebooks locally:
 
 ```bash
 jupyter notebook notebooks/
@@ -342,7 +351,7 @@ Contributions are welcome! Areas of interest:
 - Integration with real protein databases
 - Performance optimizations
 
-Please open an issue or pull request on GitHub.
+Please open an issue or pull request on [GitHub](https://github.com/Tommaso-R-Marena/quantum-protein-folding-research).
 
 ## 📝 Citation
 
@@ -360,14 +369,14 @@ If you use this code in your research, please cite:
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](https://github.com/Tommaso-R-Marena/quantum-protein-folding-research/blob/main/LICENSE) file for details.
 
 ## 📧 Contact
 
 **Tommaso R. Marena**
 - Email: [marena@cua.edu](mailto:marena@cua.edu)
 - GitHub: [@Tommaso-R-Marena](https://github.com/Tommaso-R-Marena)
-- Institution: The Catholic University of America
+- Institution: [The Catholic University of America](https://www.catholic.edu/)
 
 ---
 
