@@ -1,22 +1,47 @@
 """Pytest configuration and fixtures."""
 
 import pytest
+import numpy as np
 
-
-def pytest_configure(config):
-    """Configure pytest."""
-    config.addinivalue_line(
-        "markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')"
-    )
+from quantum_protein_folding.data.loaders import load_hp_sequence
+from quantum_protein_folding.data.preprocess import map_to_lattice
 
 
 @pytest.fixture
 def simple_hp_sequence():
-    """Fixture providing a simple HP sequence."""
-    return "HPHPPH"
+    """Simple HP sequence for testing."""
+    return load_hp_sequence("HPHH")
 
 
 @pytest.fixture
 def medium_hp_sequence():
-    """Fixture providing a medium HP sequence."""
-    return "HPHPPHHPPHPHHH"
+    """Medium HP sequence."""
+    return load_hp_sequence("HPHPPHHPHH")
+
+
+@pytest.fixture
+def simple_lattice_encoding(simple_hp_sequence):
+    """Simple lattice encoding."""
+    return map_to_lattice(
+        simple_hp_sequence,
+        lattice_dim=2,
+        encoding_type='turn_direction'
+    )
+
+
+@pytest.fixture
+def simple_conformation_2d():
+    """Simple 2D conformation."""
+    return np.array([
+        [0, 0],
+        [1, 0],
+        [1, 1],
+        [0, 1]
+    ])
+
+
+@pytest.fixture
+def random_seed():
+    """Set random seed for reproducibility."""
+    np.random.seed(42)
+    return 42
