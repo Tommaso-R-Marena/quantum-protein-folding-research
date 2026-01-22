@@ -1,432 +1,294 @@
-"""Lattice mapping and preprocessing for protein sequences.
+"""Lattice encoding and preprocessing for quantum algorithms.
 
-Converts protein sequences to lattice representations suitable for
-quantum algorithm encoding.
+This module implements:
+1. Binary position encoding: Map residues to lattice sites with binary qubits
+2. Turn-based encoding: Encode conformations as sequence of turns
+3. Lattice constraint enforcement: Self-avoidance and connectivity
 """
 
 import numpy as np
+from typing import List, Tuple, Dict, Optional
 from dataclasses import dataclass
-from typing import List, Tuple, Optional, Dict, Union
-from enum import Enum
+import itertools
 
 from quantum_protein_folding.data.loaders import ProteinSequence
-from quantum_protein_folding.data.mj_matrix import (
-    sequence_to_mj_matrix,
-    get_hp_energies,
-)
-
-
-class LatticeType(Enum):
-    """Supported lattice types for protein folding."""
-    CUBIC_2D = "cubic_2d"  # Square lattice
-    CUBIC_3D = "cubic_3d"  # Cubic lattice
-    TETRAHEDRAL = "tetrahedral"  # Tetrahedral lattice (3D)
-
-
-class EncodingType(Enum):
-    """Qubit encoding strategies."""
-    POSITION = "position"  # Binary encoding of absolute positions
-    DIRECTION = "direction"  # Binary encoding of bond directions
-    TURN = "turn"  # Encoding of turns (left/right/straight)
 
 
 @dataclass
-class LatticeData:
-    """Container for lattice-encoded protein data.
+class LatticeEncoding:
+    """Encoded protein conformation on lattice.
     
     Attributes:
-        sequence: Original protein sequence
-        lattice_type: Type of lattice
-        lattice_dim: Lattice dimension (2 or 3)
-        lattice_size: Maximum extent in each dimension
-        contact_matrix: NxN contact energy matrix
         n_qubits: Total number of qubits required
-        encoding_type: Qubit encoding strategy
-        hamiltonian: Quantum Hamiltonian operator (if constructed)
-        metadata: Additional information
+        encoding_type: 'binary_position' or 'turn_direction'
+        lattice_dim: Lattice dimension (2 or 3)
+        lattice_size: Size of lattice in each dimension
+        qubit_map: Mapping from qubit indices to physical meaning
+        hamiltonian: Qiskit SparsePauliOp representing the energy
     """
-    sequence: str
-    lattice_type: LatticeType
+    n_qubits: int
+    encoding_type: str
     lattice_dim: int
     lattice_size: int
-    contact_matrix: np.ndarray
-    n_qubits: int
-    encoding_type: EncodingType
-    hamiltonian: Optional[object] = None
-    metadata: Dict = None
+    qubit_map: Dict[int, str]
+    hamiltonian: 'SparsePauliOp'  # type: ignore
+    sequence: ProteinSequence
     
-    def __post_init__(self):
-        if self.metadata is None:
-            self.metadata = {}
 
-
-def calculate_n_qubits(
-    chain_length: int,
-    lattice_dim: int,
-    lattice_size: int,
-    encoding_type: EncodingType
-) -> int:
-    """Calculate number of qubits needed for encoding.
-    
-    Args:
-        chain_length: Number of residues
-        lattice_dim: Dimension of lattice (2 or 3)
-        lattice_size: Maximum extent in each dimension
-        encoding_type: Encoding strategy
-    
-    Returns:
-        Total number of qubits
-    
-    Mathematical Details:
-        Position encoding:
-            - Each coordinate needs log2(lattice_size) qubits
-            - Total: chain_length * lattice_dim * ceil(log2(lattice_size))
-        
-        Direction encoding:
-            - 2D: 4 directions (2 qubits per bond)
-            - 3D: 6 directions (3 qubits per bond)
-            - Total: (chain_length - 1) * qubits_per_direction
-        
-        Turn encoding:
-            - 3 turn types: straight, left, right
-            - 2 qubits per turn
-            - Total: (chain_length - 2) * 2
-    
-    Example:
-        >>> n_q = calculate_n_qubits(10, 2, 8, EncodingType.POSITION)
-        >>> print(n_q)
-        60  # 10 * 2 * 3 (log2(8) = 3)
-    """
-    if encoding_type == EncodingType.POSITION:
-        bits_per_coord = int(np.ceil(np.log2(lattice_size)))
-        return chain_length * lattice_dim * bits_per_coord
-    
-    elif encoding_type == EncodingType.DIRECTION:
-        if lattice_dim == 2:
-            bits_per_direction = 2  # 4 directions: up, down, left, right
-        else:  # 3D
-            bits_per_direction = 3  # 6 directions: ±x, ±y, ±z
-        return (chain_length - 1) * bits_per_direction
-    
-    elif encoding_type == EncodingType.TURN:
-        # Encode relative turns between consecutive bonds
-        return (chain_length - 2) * 2  # 2 qubits encode 3 turn types
-    
-    else:
-        raise ValueError(f"Unknown encoding type: {encoding_type}")
-
-
-def encode_sequence(
-    sequence: Union[str, ProteinSequence],
+def encode_binary_positions(
+    sequence: ProteinSequence,
     lattice_dim: int = 2,
-    lattice_size: int = None,
-    encoding_type: EncodingType = EncodingType.DIRECTION,
-) -> np.ndarray:
-    """Encode protein sequence for lattice representation.
+    lattice_size: int = None
+) -> Tuple[int, Dict[int, Tuple[int, int]]]:
+    """Encode residue positions with binary qubits.
+    
+    Each residue position (x, y) or (x, y, z) is encoded in binary.
+    For dimension d and lattice size L:
+        - Each coordinate requires ceil(log2(L)) qubits
+        - Total qubits: N * d * ceil(log2(L))
     
     Args:
-        sequence: Protein sequence or ProteinSequence object
+        sequence: Protein sequence
         lattice_dim: Lattice dimension (2 or 3)
-        lattice_size: Maximum lattice extent (default: 2 * len(sequence))
-        encoding_type: Encoding strategy
-    
+        lattice_size: Lattice size (default: sequence length + 2)
+        
     Returns:
-        Integer array encoding residue properties
-    
-    Example:
-        >>> encoded = encode_sequence("HPHPH", lattice_dim=2)
-        >>> encoded.shape
-        (5,)
+        n_qubits: Total qubits needed
+        qubit_map: Maps qubit index to (residue_idx, coordinate, bit_position)
     """
-    if isinstance(sequence, ProteinSequence):
-        seq_str = str(sequence)
-    else:
-        seq_str = sequence
-    
     if lattice_size is None:
-        lattice_size = 2 * len(seq_str)
+        lattice_size = sequence.length + 2
     
-    # For now, return simple integer encoding
-    # H -> 0, P -> 1 for HP model
-    # Or map amino acids to indices
-    if all(c in 'HP' for c in seq_str.upper()):
-        return np.array([0 if c == 'H' else 1 for c in seq_str.upper()])
-    else:
-        # Use ASCII values as simple encoding
-        return np.array([ord(c) for c in seq_str.upper()])
+    n_bits_per_coord = int(np.ceil(np.log2(lattice_size)))
+    n_qubits = sequence.length * lattice_dim * n_bits_per_coord
+    
+    qubit_map = {}
+    qubit_idx = 0
+    
+    for residue in range(sequence.length):
+        for coord in range(lattice_dim):
+            for bit in range(n_bits_per_coord):
+                qubit_map[qubit_idx] = (residue, coord, bit)
+                qubit_idx += 1
+    
+    return n_qubits, qubit_map
+
+
+def encode_turn_directions(
+    sequence: ProteinSequence,
+    lattice_dim: int = 2
+) -> Tuple[int, Dict[int, Tuple[int, str]]]:
+    """Encode conformation as sequence of turn directions.
+    
+    For 2D lattice: 4 directions (forward, left, right, back)
+    For 3D lattice: 6 directions
+    
+    Each turn requires ceil(log2(n_directions)) qubits.
+    Total qubits: (N-1) * ceil(log2(n_directions))
+    
+    Args:
+        sequence: Protein sequence
+        lattice_dim: Lattice dimension
+        
+    Returns:
+        n_qubits: Total qubits needed
+        qubit_map: Maps qubit index to (bond_idx, direction_bit)
+    """
+    n_directions = 2 * lattice_dim
+    n_bits_per_turn = int(np.ceil(np.log2(n_directions)))
+    n_bonds = sequence.length - 1
+    n_qubits = n_bonds * n_bits_per_turn
+    
+    qubit_map = {}
+    qubit_idx = 0
+    
+    for bond in range(n_bonds):
+        for bit in range(n_bits_per_turn):
+            qubit_map[qubit_idx] = (bond, f"direction_bit_{bit}")
+            qubit_idx += 1
+    
+    return n_qubits, qubit_map
 
 
 def map_to_lattice(
-    sequence: Union[str, ProteinSequence],
+    sequence: ProteinSequence,
     lattice_dim: int = 2,
     lattice_size: Optional[int] = None,
-    lattice_type: LatticeType = LatticeType.CUBIC_2D,
-    encoding_type: EncodingType = EncodingType.DIRECTION,
-    potential_type: str = "hp",
-    **kwargs
-) -> LatticeData:
-    """Map protein sequence to lattice representation.
+    encoding_type: str = 'turn_direction',
+    constraint_weight: float = 10.0,
+    bias_weight: float = 0.1
+) -> LatticeEncoding:
+    """Map protein sequence to lattice with quantum Hamiltonian.
+    
+    This is the main preprocessing function that:
+    1. Chooses encoding scheme
+    2. Builds quantum Hamiltonian with contact, backbone, and bias terms
+    3. Returns complete lattice encoding ready for VQE/QAOA
     
     Args:
-        sequence: Protein sequence string or ProteinSequence object
-        lattice_dim: Dimension of lattice (2 or 3)
-        lattice_size: Maximum extent in each dimension (auto if None)
-        lattice_type: Type of lattice geometry
-        encoding_type: Qubit encoding strategy
-        potential_type: Contact potential ('hp' or 'miyazawa_jernigan')
-        **kwargs: Additional parameters
-    
-    Returns:
-        LatticeData object with all preprocessing completed
-    
-    Example:
-        >>> from quantum_protein_folding.data.loaders import load_hp_sequence
-        >>> seq = load_hp_sequence("HPHPPHHPHH")
-        >>> lattice_data = map_to_lattice(
-        ...     seq,
-        ...     lattice_dim=2,
-        ...     lattice_type=LatticeType.CUBIC_2D,
-        ...     potential_type="hp"
-        ... )
-        >>> print(lattice_data.n_qubits)
-        18  # (10-1) * 2 for direction encoding in 2D
-    """
-    # Extract sequence string
-    if isinstance(sequence, ProteinSequence):
-        seq_str = str(sequence)
-        seq_name = sequence.name
-    else:
-        seq_str = str(sequence)
-        seq_name = "unknown"
-    
-    chain_length = len(seq_str)
-    
-    # Auto-determine lattice size if not provided
-    if lattice_size is None:
-        # Rule of thumb: lattice should be large enough to accommodate
-        # fully extended chain with some buffer
-        lattice_size = max(8, chain_length + 2)
-    
-    # Validate lattice type and dimension consistency
-    if lattice_type == LatticeType.CUBIC_2D and lattice_dim != 2:
-        raise ValueError("CUBIC_2D requires lattice_dim=2")
-    if lattice_type in [LatticeType.CUBIC_3D, LatticeType.TETRAHEDRAL] and lattice_dim != 3:
-        raise ValueError(f"{lattice_type.value} requires lattice_dim=3")
-    
-    # Calculate number of qubits
-    n_qubits = calculate_n_qubits(
-        chain_length, lattice_dim, lattice_size, encoding_type
-    )
-    
-    # Build contact energy matrix
-    if potential_type == "hp" or all(c in 'HP' for c in seq_str.upper()):
-        # HP model: use simplified energies
-        e_hh, e_hp, e_pp = get_hp_energies()
-        contact_matrix = np.zeros((chain_length, chain_length))
+        sequence: Protein sequence with contact matrix
+        lattice_dim: Lattice dimension (2 or 3)
+        lattice_size: Lattice size (auto-determined if None)
+        encoding_type: 'binary_position' or 'turn_direction'
+        constraint_weight: Weight for backbone constraints (lambda)
+        bias_weight: Weight for compactness bias (mu)
         
-        for i in range(chain_length):
-            for j in range(chain_length):
-                if i != j:
-                    aa_i = seq_str[i].upper()
-                    aa_j = seq_str[j].upper()
-                    
-                    if aa_i == 'H' and aa_j == 'H':
-                        contact_matrix[i, j] = e_hh
-                    elif aa_i == 'P' and aa_j == 'P':
-                        contact_matrix[i, j] = e_pp
-                    else:
-                        contact_matrix[i, j] = e_hp
+    Returns:
+        LatticeEncoding with Hamiltonian
+    """
+    from quantum_protein_folding.quantum.hamiltonian import build_hamiltonian
     
-    elif potential_type == "miyazawa_jernigan" or potential_type == "mj":
-        # Full MJ matrix
-        contact_matrix = sequence_to_mj_matrix(seq_str)
+    if lattice_size is None:
+        lattice_size = sequence.length + 2
     
-    else:
-        raise ValueError(
-            f"Unknown potential type: {potential_type}. "
-            f"Use 'hp' or 'miyazawa_jernigan'"
+    # Choose encoding
+    if encoding_type == 'binary_position':
+        n_qubits, qubit_map = encode_binary_positions(
+            sequence, lattice_dim, lattice_size
         )
+    elif encoding_type == 'turn_direction':
+        n_qubits, qubit_map = encode_turn_directions(sequence, lattice_dim)
+    else:
+        raise ValueError(f"Unknown encoding type: {encoding_type}")
     
-    # Create LatticeData object
-    lattice_data = LatticeData(
-        sequence=seq_str,
-        lattice_type=lattice_type,
+    # Build Hamiltonian
+    hamiltonian = build_hamiltonian(
+        sequence=sequence,
+        n_qubits=n_qubits,
         lattice_dim=lattice_dim,
         lattice_size=lattice_size,
-        contact_matrix=contact_matrix,
-        n_qubits=n_qubits,
         encoding_type=encoding_type,
-        metadata={
-            'sequence_name': seq_name,
-            'chain_length': chain_length,
-            'potential_type': potential_type,
-            **kwargs
-        }
+        constraint_weight=constraint_weight,
+        bias_weight=bias_weight
     )
     
-    return lattice_data
+    return LatticeEncoding(
+        n_qubits=n_qubits,
+        encoding_type=encoding_type,
+        lattice_dim=lattice_dim,
+        lattice_size=lattice_size,
+        qubit_map=qubit_map,
+        hamiltonian=hamiltonian,
+        sequence=sequence
+    )
 
 
-def get_neighbor_directions(lattice_dim: int) -> List[Tuple[int, ...]]:
-    """Get possible neighbor directions for a lattice.
-    
-    Args:
-        lattice_dim: Dimension of lattice (2 or 3)
-    
-    Returns:
-        List of direction tuples
-    
-    Example:
-        >>> dirs_2d = get_neighbor_directions(2)
-        >>> len(dirs_2d)
-        4  # up, down, left, right
-        >>> dirs_3d = get_neighbor_directions(3)
-        >>> len(dirs_3d)
-        6  # ±x, ±y, ±z
-    """
-    if lattice_dim == 2:
-        return [(0, 1), (0, -1), (1, 0), (-1, 0)]  # Up, down, right, left
-    elif lattice_dim == 3:
-        return [
-            (1, 0, 0), (-1, 0, 0),  # ±x
-            (0, 1, 0), (0, -1, 0),  # ±y
-            (0, 0, 1), (0, 0, -1),  # ±z
-        ]
-    else:
-        raise ValueError(f"Unsupported dimension: {lattice_dim}")
-
-
-def bitstring_to_conformation(
+def decode_conformation(
     bitstring: str,
-    lattice_data: LatticeData,
-    start_position: Optional[Tuple[int, ...]] = None
+    encoding: LatticeEncoding
 ) -> np.ndarray:
     """Decode bitstring to lattice conformation.
     
     Args:
-        bitstring: Binary string from quantum measurement
-        lattice_data: LatticeData object with encoding info
-        start_position: Starting position (default: lattice center)
-    
+        bitstring: Measurement outcome (binary string)
+        encoding: Lattice encoding specification
+        
     Returns:
-        (chain_length, lattice_dim) array of positions
-    
-    Example:
-        >>> lattice_data = map_to_lattice("HPHPH", lattice_dim=2)
-        >>> bitstring = "01001101"  # Example measurement
-        >>> positions = bitstring_to_conformation(bitstring, lattice_data)
-        >>> positions.shape
-        (5, 2)
+        coordinates: (N, d) array of residue positions
     """
-    chain_length = len(lattice_data.sequence)
-    lattice_dim = lattice_data.lattice_dim
-    encoding_type = lattice_data.encoding_type
+    n = encoding.sequence.length
+    d = encoding.lattice_dim
     
-    if start_position is None:
-        # Start at center of lattice
-        start_position = tuple([lattice_data.lattice_size // 2] * lattice_dim)
-    
-    if encoding_type == EncodingType.DIRECTION:
-        # Decode direction encoding
-        directions = get_neighbor_directions(lattice_dim)
-        n_dirs = len(directions)
-        bits_per_direction = int(np.ceil(np.log2(n_dirs)))
-        
-        # Build conformation by following encoded directions
-        positions = np.zeros((chain_length, lattice_dim), dtype=int)
-        positions[0] = start_position
-        
-        for i in range(chain_length - 1):
-            # Extract bits for this bond
-            start_bit = i * bits_per_direction
-            end_bit = start_bit + bits_per_direction
-            direction_bits = bitstring[start_bit:end_bit]
-            
-            # Convert to direction index
-            dir_idx = int(direction_bits, 2) % n_dirs
-            direction = directions[dir_idx]
-            
-            # Move to next position
-            positions[i + 1] = positions[i] + np.array(direction)
-    
-    elif encoding_type == EncodingType.POSITION:
-        # Decode absolute position encoding
-        bits_per_coord = int(np.ceil(np.log2(lattice_data.lattice_size)))
-        bits_per_residue = lattice_dim * bits_per_coord
-        
-        positions = np.zeros((chain_length, lattice_dim), dtype=int)
-        
-        for i in range(chain_length):
-            for d in range(lattice_dim):
-                start_bit = i * bits_per_residue + d * bits_per_coord
-                end_bit = start_bit + bits_per_coord
-                coord_bits = bitstring[start_bit:end_bit]
-                positions[i, d] = int(coord_bits, 2) % lattice_data.lattice_size
-    
+    if encoding.encoding_type == 'binary_position':
+        return _decode_binary_position(bitstring, n, d, encoding.lattice_size)
+    elif encoding.encoding_type == 'turn_direction':
+        return _decode_turn_direction(bitstring, n, d)
     else:
-        raise NotImplementedError(f"Decoding for {encoding_type} not implemented")
+        raise ValueError(f"Unknown encoding: {encoding.encoding_type}")
+
+
+def _decode_binary_position(
+    bitstring: str,
+    n_residues: int,
+    lattice_dim: int,
+    lattice_size: int
+) -> np.ndarray:
+    """Decode binary position encoding to coordinates."""
+    n_bits_per_coord = int(np.ceil(np.log2(lattice_size)))
+    coords = np.zeros((n_residues, lattice_dim), dtype=int)
     
-    return positions
+    bit_idx = 0
+    for i in range(n_residues):
+        for d in range(lattice_dim):
+            # Extract bits for this coordinate
+            coord_bits = bitstring[bit_idx:bit_idx + n_bits_per_coord]
+            coords[i, d] = int(coord_bits, 2) % lattice_size
+            bit_idx += n_bits_per_coord
+    
+    return coords
 
 
-def check_self_avoidance(positions: np.ndarray) -> bool:
-    """Check if conformation satisfies self-avoidance constraint.
+def _decode_turn_direction(
+    bitstring: str,
+    n_residues: int,
+    lattice_dim: int
+) -> np.ndarray:
+    """Decode turn direction encoding to coordinates."""
+    n_directions = 2 * lattice_dim
+    n_bits_per_turn = int(np.ceil(np.log2(n_directions)))
+    
+    # Direction vectors for 2D
+    if lattice_dim == 2:
+        direction_map = {
+            0: np.array([1, 0]),   # East
+            1: np.array([0, 1]),   # North
+            2: np.array([-1, 0]),  # West
+            3: np.array([0, -1]),  # South
+        }
+    else:  # 3D
+        direction_map = {
+            0: np.array([1, 0, 0]),
+            1: np.array([-1, 0, 0]),
+            2: np.array([0, 1, 0]),
+            3: np.array([0, -1, 0]),
+            4: np.array([0, 0, 1]),
+            5: np.array([0, 0, -1]),
+        }
+    
+    # Start at origin
+    coords = np.zeros((n_residues, lattice_dim), dtype=int)
+    current_pos = np.zeros(lattice_dim, dtype=int)
+    coords[0] = current_pos
+    
+    # Decode turns
+    bit_idx = 0
+    for bond in range(n_residues - 1):
+        turn_bits = bitstring[bit_idx:bit_idx + n_bits_per_turn]
+        direction_idx = int(turn_bits, 2) % n_directions
+        
+        current_pos = current_pos + direction_map[direction_idx]
+        coords[bond + 1] = current_pos
+        bit_idx += n_bits_per_turn
+    
+    return coords
+
+
+def check_valid_conformation(
+    coords: np.ndarray,
+    sequence: ProteinSequence
+) -> Tuple[bool, str]:
+    """Check if conformation satisfies lattice constraints.
     
     Args:
-        positions: (chain_length, lattice_dim) array of positions
-    
+        coords: (N, d) array of residue positions
+        sequence: Protein sequence
+        
     Returns:
-        True if no self-overlaps, False otherwise
-    
-    Example:
-        >>> positions = np.array([[0, 0], [0, 1], [1, 1], [1, 0]])
-        >>> check_self_avoidance(positions)
-        True
-        >>> positions_overlap = np.array([[0, 0], [0, 1], [0, 0]])
-        >>> check_self_avoidance(positions_overlap)
-        False
+        is_valid: True if conformation is valid
+        message: Description of violation (if any)
     """
-    # Convert positions to tuples for set comparison
-    position_tuples = [tuple(pos) for pos in positions]
-    return len(position_tuples) == len(set(position_tuples))
-
-
-def check_connectivity(positions: np.ndarray) -> bool:
-    """Check if conformation satisfies chain connectivity.
+    n = sequence.length
     
-    Args:
-        positions: (chain_length, lattice_dim) array of positions
+    # Check connectivity: adjacent residues must be neighbors
+    for i in range(n - 1):
+        dist = np.linalg.norm(coords[i+1] - coords[i])
+        if abs(dist - 1.0) > 1e-6:
+            return False, f"Bond {i}-{i+1} has length {dist:.3f} (should be 1)"
     
-    Returns:
-        True if all consecutive residues are neighbors, False otherwise
+    # Check self-avoidance: no two residues at same position
+    for i in range(n):
+        for j in range(i + 1, n):
+            if np.allclose(coords[i], coords[j]):
+                return False, f"Residues {i} and {j} overlap at {coords[i]}"
     
-    Example:
-        >>> positions = np.array([[0, 0], [0, 1], [1, 1]])
-        >>> check_connectivity(positions)
-        True
-        >>> positions_broken = np.array([[0, 0], [0, 2], [1, 1]])
-        >>> check_connectivity(positions_broken)
-        False
-    """
-    for i in range(len(positions) - 1):
-        distance = np.linalg.norm(positions[i + 1] - positions[i])
-        if not np.isclose(distance, 1.0):
-            return False
-    return True
-
-
-def is_valid_conformation(positions: np.ndarray) -> bool:
-    """Check if conformation is physically valid.
-    
-    Args:
-        positions: (chain_length, lattice_dim) array of positions
-    
-    Returns:
-        True if conformation satisfies all constraints
-    
-    Example:
-        >>> positions = np.array([[0, 0], [0, 1], [1, 1], [1, 0]])
-        >>> is_valid_conformation(positions)
-        True
-    """
-    return check_self_avoidance(positions) and check_connectivity(positions)
+    return True, "Valid conformation"
