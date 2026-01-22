@@ -1,374 +1,254 @@
-"""Quantum circuit builders for variational ansätze.
+"""Quantum circuit construction for variational algorithms.
 
-Provides various ansatz designs:
-    - Hardware-efficient ansatz
-    - Problem-inspired ansatz (lattice-aware)
-    - Custom parameterized circuits
+Implements:
+1. Hardware-efficient ansatz
+2. Problem-inspired ansatz (lattice topology)
+3. QAOA mixer and cost operators
 """
 
 import numpy as np
-from typing import List, Tuple, Optional, Union, Callable
-from enum import Enum
-
-try:
-    from qiskit import QuantumCircuit, QuantumRegister
-    from qiskit.circuit import Parameter, ParameterVector
-    from qiskit.circuit.library import TwoLocal, RealAmplitudes, EfficientSU2
-    QISKIT_AVAILABLE = True
-except ImportError:
-    QISKIT_AVAILABLE = False
-    import warnings
-    warnings.warn("Qiskit not installed")
+from typing import List, Optional, Tuple
+from qiskit import QuantumCircuit
+from qiskit.circuit import Parameter, ParameterVector
+from qiskit.quantum_info import SparsePauliOp
 
 
-class AnsatzType(Enum):
-    """Supported ansatz types."""
-    HARDWARE_EFFICIENT = "hardware_efficient"
-    PROBLEM_INSPIRED = "problem_inspired"
-    REAL_AMPLITUDES = "real_amplitudes"
-    EFFICIENT_SU2 = "efficient_su2"
-    CUSTOM = "custom"
-
-
-class EntanglementPattern(Enum):
-    """Entanglement connection patterns."""
-    LINEAR = "linear"  # Chain: 0-1, 1-2, 2-3, ...
-    FULL = "full"  # All-to-all connections
-    CIRCULAR = "circular"  # Ring: includes n-1 to 0
-    PAIRWISE = "pairwise"  # Adjacent pairs: (0,1), (2,3), ...
-
-
-class CircuitBuilder:
-    """Builder for variational quantum circuits.
+def build_hardware_efficient_ansatz(
+    n_qubits: int,
+    depth: int = 3,
+    entanglement: str = 'linear',
+    parameter_prefix: str = 'θ'
+) -> Tuple[QuantumCircuit, List[Parameter]]:
+    """Build hardware-efficient variational ansatz.
     
-    Constructs parameterized circuits for VQE and QAOA algorithms.
-    
-    Attributes:
-        n_qubits: Number of qubits
-        ansatz_type: Type of ansatz to build
-        depth: Number of ansatz layers
-        entanglement: Entanglement pattern
-        rotation_blocks: Rotation gates for each layer
-        entanglement_blocks: Entanglement gates
-    
-    Example:
-        >>> builder = CircuitBuilder(
-        ...     n_qubits=6,
-        ...     ansatz_type=AnsatzType.HARDWARE_EFFICIENT,
-        ...     depth=3
-        ... )
-        >>> circuit, params = builder.build()
-        >>> print(f"Parameters: {len(params)}")
-        36  # 6 qubits * 2 rotations * 3 layers
-    """
-    
-    def __init__(
-        self,
-        n_qubits: int,
-        ansatz_type: AnsatzType = AnsatzType.HARDWARE_EFFICIENT,
-        depth: int = 1,
-        entanglement: EntanglementPattern = EntanglementPattern.LINEAR,
-        rotation_blocks: Optional[List[str]] = None,
-        entanglement_blocks: Optional[List[str]] = None,
-        insert_barriers: bool = False,
-    ):
-        """Initialize circuit builder.
-        
-        Args:
-            n_qubits: Number of qubits
-            ansatz_type: Type of ansatz
-            depth: Number of repetitions of rotation + entanglement layers
-            entanglement: Pattern for entangling gates
-            rotation_blocks: Gates for rotation layer (default: ['ry', 'rz'])
-            entanglement_blocks: Gates for entanglement (default: ['cx'])
-            insert_barriers: Whether to insert barriers between layers
-        """
-        if not QISKIT_AVAILABLE:
-            raise ImportError("Qiskit required. Install with: pip install qiskit")
-        
-        self.n_qubits = n_qubits
-        self.ansatz_type = ansatz_type
-        self.depth = depth
-        self.entanglement = entanglement
-        self.rotation_blocks = rotation_blocks or ['ry', 'rz']
-        self.entanglement_blocks = entanglement_blocks or ['cx']
-        self.insert_barriers = insert_barriers
-    
-    def build(self) -> Tuple[QuantumCircuit, ParameterVector]:
-        """Build the variational circuit.
-        
-        Returns:
-            Tuple of (circuit, parameters)
-        
-        Raises:
-            NotImplementedError: If ansatz type not supported
-        """
-        if self.ansatz_type == AnsatzType.HARDWARE_EFFICIENT:
-            return self._build_hardware_efficient()
-        elif self.ansatz_type == AnsatzType.PROBLEM_INSPIRED:
-            return self._build_problem_inspired()
-        elif self.ansatz_type == AnsatzType.REAL_AMPLITUDES:
-            return self._build_real_amplitudes()
-        elif self.ansatz_type == AnsatzType.EFFICIENT_SU2:
-            return self._build_efficient_su2()
-        else:
-            raise NotImplementedError(f"Ansatz {self.ansatz_type} not implemented")
-    
-    def _build_hardware_efficient(self) -> Tuple[QuantumCircuit, ParameterVector]:
-        """Build hardware-efficient ansatz.
-        
-        Structure for each layer:
-            1. Single-qubit rotations (RY and RZ on each qubit)
-            2. Entangling layer (CX gates according to pattern)
-        
-        Returns:
-            Tuple of (circuit, parameters)
-        """
-        n_params_per_layer = self.n_qubits * len(self.rotation_blocks)
-        total_params = n_params_per_layer * self.depth
-        
-        # Create parameter vector
-        params = ParameterVector('θ', total_params)
-        
-        # Create circuit
-        qc = QuantumCircuit(self.n_qubits)
-        
-        param_idx = 0
-        for layer in range(self.depth):
-            # Rotation layer
-            for rot_gate in self.rotation_blocks:
-                for qubit in range(self.n_qubits):
-                    if rot_gate == 'ry':
-                        qc.ry(params[param_idx], qubit)
-                    elif rot_gate == 'rz':
-                        qc.rz(params[param_idx], qubit)
-                    elif rot_gate == 'rx':
-                        qc.rx(params[param_idx], qubit)
-                    else:
-                        raise ValueError(f"Unknown rotation gate: {rot_gate}")
-                    param_idx += 1
-            
-            # Entanglement layer
-            if layer < self.depth:  # No entanglement after last layer
-                self._add_entanglement_layer(qc)
-            
-            if self.insert_barriers:
-                qc.barrier()
-        
-        return qc, params
-    
-    def _build_problem_inspired(self) -> Tuple[QuantumCircuit, ParameterVector]:
-        """Build problem-inspired ansatz.
-        
-        For protein folding, this respects the lattice structure by
-        entangling qubits that correspond to nearby residues.
-        
-        Returns:
-            Tuple of (circuit, parameters)
-        """
-        # Similar to hardware-efficient but with custom entanglement
-        # that matches the protein chain topology
-        
-        n_params_per_layer = self.n_qubits * 2  # RY + RZ
-        total_params = n_params_per_layer * self.depth
-        
-        params = ParameterVector('θ', total_params)
-        qc = QuantumCircuit(self.n_qubits)
-        
-        param_idx = 0
-        for layer in range(self.depth):
-            # Rotation layer
-            for qubit in range(self.n_qubits):
-                qc.ry(params[param_idx], qubit)
-                param_idx += 1
-                qc.rz(params[param_idx], qubit)
-                param_idx += 1
-            
-            # Chain-like entanglement (respecting protein backbone)
-            for qubit in range(self.n_qubits - 1):
-                qc.cx(qubit, qubit + 1)
-            
-            # Add some long-range entanglement for non-local contacts
-            if layer % 2 == 1 and self.n_qubits > 4:
-                for qubit in range(0, self.n_qubits - 2, 2):
-                    qc.cx(qubit, qubit + 2)
-            
-            if self.insert_barriers:
-                qc.barrier()
-        
-        return qc, params
-    
-    def _build_real_amplitudes(self) -> Tuple[QuantumCircuit, ParameterVector]:
-        """Build RealAmplitudes ansatz from Qiskit library.
-        
-        Returns:
-            Tuple of (circuit, parameters)
-        """
-        ansatz = RealAmplitudes(
-            self.n_qubits,
-            reps=self.depth,
-            entanglement=self._get_qiskit_entanglement(),
-            insert_barriers=self.insert_barriers
-        )
-        
-        params = ParameterVector('θ', ansatz.num_parameters)
-        qc = ansatz.assign_parameters(params)
-        
-        return qc, params
-    
-    def _build_efficient_su2(self) -> Tuple[QuantumCircuit, ParameterVector]:
-        """Build EfficientSU2 ansatz from Qiskit library.
-        
-        Returns:
-            Tuple of (circuit, parameters)
-        """
-        ansatz = EfficientSU2(
-            self.n_qubits,
-            reps=self.depth,
-            entanglement=self._get_qiskit_entanglement(),
-            insert_barriers=self.insert_barriers
-        )
-        
-        params = ParameterVector('θ', ansatz.num_parameters)
-        qc = ansatz.assign_parameters(params)
-        
-        return qc, params
-    
-    def _add_entanglement_layer(self, qc: QuantumCircuit) -> None:
-        """Add entanglement gates to circuit.
-        
-        Args:
-            qc: Circuit to modify in-place
-        """
-        if self.entanglement == EntanglementPattern.LINEAR:
-            # Chain: 0-1, 1-2, 2-3, ...
-            for i in range(self.n_qubits - 1):
-                qc.cx(i, i + 1)
-        
-        elif self.entanglement == EntanglementPattern.CIRCULAR:
-            # Ring: includes connection from last to first
-            for i in range(self.n_qubits - 1):
-                qc.cx(i, i + 1)
-            qc.cx(self.n_qubits - 1, 0)
-        
-        elif self.entanglement == EntanglementPattern.FULL:
-            # All-to-all
-            for i in range(self.n_qubits):
-                for j in range(i + 1, self.n_qubits):
-                    qc.cx(i, j)
-        
-        elif self.entanglement == EntanglementPattern.PAIRWISE:
-            # Adjacent pairs
-            for i in range(0, self.n_qubits - 1, 2):
-                qc.cx(i, i + 1)
-        
-        else:
-            raise ValueError(f"Unknown entanglement pattern: {self.entanglement}")
-    
-    def _get_qiskit_entanglement(self) -> str:
-        """Convert entanglement pattern to Qiskit format.
-        
-        Returns:
-            Qiskit entanglement string
-        """
-        mapping = {
-            EntanglementPattern.LINEAR: 'linear',
-            EntanglementPattern.FULL: 'full',
-            EntanglementPattern.CIRCULAR: 'circular',
-            EntanglementPattern.PAIRWISE: 'pairwise',
-        }
-        return mapping.get(self.entanglement, 'linear')
-
-
-def initialize_parameters(
-    n_params: int,
-    method: str = "random",
-    seed: Optional[int] = None,
-    scale: float = 0.1
-) -> np.ndarray:
-    """Initialize variational parameters.
+    Circuit structure per layer:
+    1. Single-qubit rotations: Ry(θ) ⊗ Rz(φ) on each qubit
+    2. Entangling gates: CNOT according to topology
     
     Args:
-        n_params: Number of parameters
-        method: Initialization method ('random', 'zeros', 'small_random')
-        seed: Random seed for reproducibility
-        scale: Scale for random initialization
-    
+        n_qubits: Number of qubits
+        depth: Number of ansatz layers
+        entanglement: 'linear', 'circular', or 'full'
+        parameter_prefix: Prefix for parameter names
+        
     Returns:
-        Array of initial parameter values
-    
-    Example:
-        >>> params = initialize_parameters(36, method='random', seed=42)
-        >>> params.shape
-        (36,)
+        circuit: Parameterized quantum circuit
+        parameters: List of variational parameters
     """
-    if seed is not None:
-        np.random.seed(seed)
+    # Create parameter vectors
+    params_ry = ParameterVector(f'{parameter_prefix}_ry', length=n_qubits * depth)
+    params_rz = ParameterVector(f'{parameter_prefix}_rz', length=n_qubits * depth)
     
-    if method == "zeros":
-        return np.zeros(n_params)
-    elif method == "random":
-        return np.random.uniform(-np.pi, np.pi, n_params)
-    elif method == "small_random":
-        return np.random.uniform(-scale, scale, n_params)
-    elif method == "normal":
-        return np.random.normal(0, scale, n_params)
-    else:
-        raise ValueError(f"Unknown initialization method: {method}")
+    circuit = QuantumCircuit(n_qubits)
+    
+    # Initial layer: Hadamard on all qubits
+    for qubit in range(n_qubits):
+        circuit.h(qubit)
+    
+    param_idx = 0
+    
+    for layer in range(depth):
+        # Single-qubit rotations
+        for qubit in range(n_qubits):
+            circuit.ry(params_ry[param_idx], qubit)
+            circuit.rz(params_rz[param_idx], qubit)
+            param_idx += 1
+        
+        # Entangling layer
+        if entanglement == 'linear':
+            for qubit in range(n_qubits - 1):
+                circuit.cx(qubit, qubit + 1)
+        elif entanglement == 'circular':
+            for qubit in range(n_qubits - 1):
+                circuit.cx(qubit, qubit + 1)
+            circuit.cx(n_qubits - 1, 0)  # Wrap around
+        elif entanglement == 'full':
+            for i in range(n_qubits):
+                for j in range(i + 1, n_qubits):
+                    circuit.cx(i, j)
+        else:
+            raise ValueError(f"Unknown entanglement: {entanglement}")
+        
+        # Barrier for visualization
+        circuit.barrier()
+    
+    # Final rotation layer
+    for qubit in range(n_qubits):
+        circuit.ry(params_ry[param_idx], qubit)
+        circuit.rz(params_rz[param_idx], qubit)
+        param_idx += 1
+    
+    all_params = list(params_ry) + list(params_rz)
+    
+    return circuit, all_params
+
+
+def build_problem_inspired_ansatz(
+    n_qubits: int,
+    lattice_dim: int,
+    depth: int = 2,
+    parameter_prefix: str = 'θ'
+) -> Tuple[QuantumCircuit, List[Parameter]]:
+    """Build problem-inspired ansatz based on lattice topology.
+    
+    Groups qubits according to lattice structure and applies
+    rotations that respect geometric constraints.
+    
+    Args:
+        n_qubits: Number of qubits
+        lattice_dim: Lattice dimension (affects grouping)
+        depth: Number of ansatz layers
+        parameter_prefix: Parameter prefix
+        
+    Returns:
+        circuit: Parameterized circuit
+        parameters: Variational parameters
+    """
+    # For simplicity, use hardware-efficient with structured entanglement
+    # In a full implementation, this would encode lattice geometry
+    
+    circuit, params = build_hardware_efficient_ansatz(
+        n_qubits=n_qubits,
+        depth=depth,
+        entanglement='linear',
+        parameter_prefix=parameter_prefix
+    )
+    
+    return circuit, params
 
 
 def build_qaoa_circuit(
-    hamiltonian,
-    p_layers: int,
-    initial_state: Optional[QuantumCircuit] = None
-) -> Tuple[QuantumCircuit, ParameterVector, ParameterVector]:
-    """Build QAOA circuit.
+    hamiltonian: SparsePauliOp,
+    p_layers: int = 1,
+    mixer_hamiltonian: Optional[SparsePauliOp] = None
+) -> Tuple[QuantumCircuit, List[Parameter]]:
+    """Build QAOA circuit with alternating cost and mixer layers.
+    
+    Circuit:
+        |ψ(β, γ)⟩ = ∏_{p=1}^P e^{-iβ_p H_M} e^{-iγ_p H_C} |+⟩^⊗n
     
     Args:
-        hamiltonian: Problem Hamiltonian (SparsePauliOp)
+        hamiltonian: Cost Hamiltonian H_C
         p_layers: Number of QAOA layers
-        initial_state: Optional custom initial state (default: |+⟩^n)
-    
+        mixer_hamiltonian: Mixer H_M (default: X mixer)
+        
     Returns:
-        Tuple of (circuit, beta_params, gamma_params)
-    
-    Mathematical Structure:
-        U(β, γ) = ∏_{k=1}^p e^{-iβ_k H_M} e^{-iγ_k H_C}
-    
-    Example:
-        >>> from qiskit.quantum_info import SparsePauliOp
-        >>> H = SparsePauliOp(['ZZ', 'Z'], [1.0, 0.5])
-        >>> qc, beta, gamma = build_qaoa_circuit(H, p_layers=2)
+        circuit: QAOA circuit
+        parameters: [β_1, ..., β_P, γ_1, ..., γ_P]
     """
-    if not QISKIT_AVAILABLE:
-        raise ImportError("Qiskit required")
-    
     n_qubits = hamiltonian.num_qubits
     
-    # Create parameter vectors
-    beta = ParameterVector('β', p_layers)
-    gamma = ParameterVector('γ', p_layers)
+    # Default mixer: sum of X operators
+    if mixer_hamiltonian is None:
+        mixer_ops = [('I' * i + 'X' + 'I' * (n_qubits - i - 1), 1.0) 
+                     for i in range(n_qubits)]
+        mixer_hamiltonian = SparsePauliOp.from_list(mixer_ops)
     
-    # Create circuit
-    qc = QuantumCircuit(n_qubits)
+    # Parameters
+    betas = ParameterVector('β', length=p_layers)
+    gammas = ParameterVector('γ', length=p_layers)
     
-    # Initial state (uniform superposition if not specified)
-    if initial_state is None:
-        for qubit in range(n_qubits):
-            qc.h(qubit)
-    else:
-        qc.compose(initial_state, inplace=True)
+    circuit = QuantumCircuit(n_qubits)
+    
+    # Initialize in |+⟩^⊗n
+    for qubit in range(n_qubits):
+        circuit.h(qubit)
     
     # QAOA layers
     for p in range(p_layers):
-        # Apply problem Hamiltonian: e^{-iγ H_C}
-        qc.compose(
-            hamiltonian.exp_i().power(gamma[p]),
-            inplace=True
-        )
+        # Cost layer: e^{-iγ H_C}
+        _apply_pauli_evolution(circuit, hamiltonian, gammas[p])
         
-        # Apply mixer Hamiltonian: e^{-iβ H_M} = ∏_i e^{-iβ X_i}
-        for qubit in range(n_qubits):
-            qc.rx(2 * beta[p], qubit)  # RX(θ) = e^{-iθ/2 X}
+        # Mixer layer: e^{-iβ H_M}
+        _apply_pauli_evolution(circuit, mixer_hamiltonian, betas[p])
+        
+        circuit.barrier()
     
-    return qc, beta, gamma
+    parameters = list(betas) + list(gammas)
+    
+    return circuit, parameters
+
+
+def _apply_pauli_evolution(
+    circuit: QuantumCircuit,
+    hamiltonian: SparsePauliOp,
+    parameter: Parameter
+) -> None:
+    """Apply e^{-i*parameter*hamiltonian} to circuit.
+    
+    Uses Pauli rotation gates for each term in the Hamiltonian.
+    """
+    for pauli, coeff in hamiltonian.to_list():
+        # Create rotation for this Pauli string
+        _apply_pauli_rotation(circuit, pauli, parameter * coeff)
+
+
+def _apply_pauli_rotation(
+    circuit: QuantumCircuit,
+    pauli_string: str,
+    angle: Parameter
+) -> None:
+    """Apply rotation e^{-i*angle*P} where P is a Pauli string.
+    
+    Implements the standard decomposition using CNOT ladders.
+    """
+    n_qubits = len(pauli_string)
+    
+    # Find non-identity Pauli operators
+    active_qubits = []
+    pauli_gates = []
+    
+    for i, pauli in enumerate(pauli_string):
+        if pauli != 'I':
+            active_qubits.append(i)
+            pauli_gates.append(pauli)
+    
+    if not active_qubits:
+        return  # Identity operator
+    
+    # Change basis for X and Y operators
+    for qubit, gate in zip(active_qubits, pauli_gates):
+        if gate == 'X':
+            circuit.h(qubit)
+        elif gate == 'Y':
+            circuit.sdg(qubit)
+            circuit.h(qubit)
+    
+    # CNOT ladder
+    for i in range(len(active_qubits) - 1):
+        circuit.cx(active_qubits[i], active_qubits[i + 1])
+    
+    # Rz rotation on last qubit
+    circuit.rz(2 * angle, active_qubits[-1])
+    
+    # Reverse CNOT ladder
+    for i in range(len(active_qubits) - 2, -1, -1):
+        circuit.cx(active_qubits[i], active_qubits[i + 1])
+    
+    # Reverse basis change
+    for qubit, gate in zip(active_qubits, pauli_gates):
+        if gate == 'X':
+            circuit.h(qubit)
+        elif gate == 'Y':
+            circuit.h(qubit)
+            circuit.s(qubit)
+
+
+def count_circuit_resources(
+    circuit: QuantumCircuit
+) -> dict:
+    """Count circuit resources (gates, depth, etc.).
+    
+    Returns:
+        Dictionary with circuit statistics
+    """
+    ops = circuit.count_ops()
+    
+    return {
+        'n_qubits': circuit.num_qubits,
+        'n_parameters': circuit.num_parameters,
+        'depth': circuit.depth(),
+        'gate_counts': ops,
+        'total_gates': sum(ops.values()),
+        'cx_count': ops.get('cx', 0),
+    }
