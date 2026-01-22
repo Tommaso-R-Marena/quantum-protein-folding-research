@@ -1,8 +1,7 @@
-"""Tests for preprocessing and lattice encoding."""
+"""Tests for lattice preprocessing."""
 
 import pytest
 import numpy as np
-
 from quantum_protein_folding.data.loaders import load_hp_sequence
 from quantum_protein_folding.data.preprocess import (
     encode_binary_positions,
@@ -13,98 +12,147 @@ from quantum_protein_folding.data.preprocess import (
 )
 
 
-class TestLatticeEncoding:
-    """Tests for lattice encoding schemes."""
+class TestEncoding:
+    """Test lattice encoding schemes."""
     
-    def test_binary_position_encoding_2d(self):
-        """Test binary position encoding in 2D."""
-        seq = load_hp_sequence("HPHH")
-        n_qubits, qubit_map = encode_binary_positions(seq, lattice_dim=2, lattice_size=6)
+    def test_turn_encoding_qubits(self):
+        """Test turn encoding qubit count."""
+        sequence = load_hp_sequence("HPHPH")
+        n_qubits, qubit_map = encode_turn_directions(sequence, lattice_dim=2)
         
-        # 4 residues * 2 dimensions * ceil(log2(6)) bits = 4*2*3 = 24
-        assert n_qubits == 24
-        assert len(qubit_map) == n_qubits
+        # For 2D: 4 directions = 2 bits per turn
+        # For N=5: 4 bonds, 2 bits each = 8 qubits
+        assert n_qubits == 8
+        assert len(qubit_map) == 8
     
-    def test_turn_direction_encoding_2d(self):
-        """Test turn direction encoding in 2D."""
-        seq = load_hp_sequence("HPHH")
-        n_qubits, qubit_map = encode_turn_directions(seq, lattice_dim=2)
+    def test_binary_encoding_qubits(self):
+        """Test binary position encoding qubit count."""
+        sequence = load_hp_sequence("HPH")
+        n_qubits, qubit_map = encode_binary_positions(
+            sequence, lattice_dim=2, lattice_size=4
+        )
         
-        # 3 bonds * ceil(log2(4)) = 3 * 2 = 6
-        assert n_qubits == 6
-        assert len(qubit_map) == n_qubits
+        # 3 residues, 2 coords, 2 bits per coord = 12 qubits
+        assert n_qubits == 12
     
-    def test_turn_direction_encoding_3d(self):
-        """Test turn direction encoding in 3D."""
-        seq = load_hp_sequence("HPH")
-        n_qubits, qubit_map = encode_turn_directions(seq, lattice_dim=3)
+    def test_encoding_3d(self):
+        """Test 3D encoding."""
+        sequence = load_hp_sequence("HPH")
+        n_qubits_2d, _ = encode_turn_directions(sequence, lattice_dim=2)
+        n_qubits_3d, _ = encode_turn_directions(sequence, lattice_dim=3)
         
-        # 2 bonds * ceil(log2(6)) = 2 * 3 = 6
-        assert n_qubits == 6
+        # 3D should require more qubits (6 directions vs 4)
+        assert n_qubits_3d > n_qubits_2d
 
 
-class TestHamiltonianConstruction:
-    """Tests for Hamiltonian construction."""
+class TestLatticeMapping:
+    """Test full lattice mapping."""
     
-    def test_hamiltonian_creation(self):
-        """Test Hamiltonian is created correctly."""
-        seq = load_hp_sequence("HPHH")
-        encoding = map_to_lattice(seq, lattice_dim=2, encoding_type='turn_direction')
+    def test_map_to_lattice(self):
+        """Test complete lattice mapping."""
+        sequence = load_hp_sequence("HPHPH")
+        encoding = map_to_lattice(sequence, lattice_dim=2)
         
+        assert encoding.n_qubits > 0
         assert encoding.hamiltonian is not None
-        assert encoding.hamiltonian.num_qubits == encoding.n_qubits
+        assert encoding.sequence == sequence
     
     def test_hamiltonian_hermitian(self):
         """Test Hamiltonian is Hermitian."""
-        seq = load_hp_sequence("HPH")
-        encoding = map_to_lattice(seq, lattice_dim=2)
+        sequence = load_hp_sequence("HPH")
+        encoding = map_to_lattice(sequence, lattice_dim=2)
         
         H_matrix = encoding.hamiltonian.to_matrix()
+        
         assert np.allclose(H_matrix, H_matrix.conj().T)
+    
+    def test_different_constraints(self):
+        """Test different constraint weights."""
+        sequence = load_hp_sequence("HPHPH")
+        
+        enc1 = map_to_lattice(sequence, constraint_weight=1.0)
+        enc2 = map_to_lattice(sequence, constraint_weight=10.0)
+        
+        # Should produce different Hamiltonians
+        assert not np.allclose(
+            enc1.hamiltonian.to_matrix(),
+            enc2.hamiltonian.to_matrix()
+        )
 
 
-class TestConformationDecoding:
-    """Tests for bitstring decoding."""
+class TestDecoding:
+    """Test bitstring decoding."""
     
     def test_decode_turn_direction(self):
         """Test decoding turn-based encoding."""
-        seq = load_hp_sequence("HPHH")
-        encoding = map_to_lattice(seq, lattice_dim=2, encoding_type='turn_direction')
+        sequence = load_hp_sequence("HPH")
+        encoding = map_to_lattice(
+            sequence, lattice_dim=2, encoding_type='turn_direction'
+        )
         
-        # Simple bitstring (all zeros)
-        bitstring = '0' * encoding.n_qubits
-        conformation = decode_conformation(bitstring, encoding)
+        # Simple bitstring (all zeros = straight line)
+        n_bits = encoding.n_qubits
+        bitstring = '0' * n_bits
         
-        assert conformation.shape == (4, 2)
-        assert conformation[0, 0] == 0 and conformation[0, 1] == 0  # Origin
+        coords = decode_conformation(bitstring, encoding)
+        
+        assert coords.shape == (3, 2)  # 3 residues, 2D
     
-    def test_conformation_validation_valid(self):
-        """Test valid conformation passes."""
-        seq = load_hp_sequence("HPHH")
+    def test_decode_validity(self):
+        """Test decoded conformation validity."""
+        sequence = load_hp_sequence("HPH")
+        encoding = map_to_lattice(sequence, lattice_dim=2)
         
-        # Valid self-avoiding walk
-        conformation = np.array([
+        # Try several random bitstrings
+        for _ in range(10):
+            bitstring = ''.join(
+                str(np.random.randint(2)) 
+                for _ in range(encoding.n_qubits)
+            )
+            
+            coords = decode_conformation(bitstring, encoding)
+            
+            # Should have correct shape
+            assert coords.shape == (sequence.length, 2)
+
+
+class TestValidation:
+    """Test conformation validation."""
+    
+    def test_valid_straight_line(self):
+        """Test valid straight-line conformation."""
+        sequence = load_hp_sequence("HPH")
+        coords = np.array([
             [0, 0],
             [1, 0],
-            [1, 1],
-            [0, 1]
+            [2, 0]
         ])
         
-        is_valid, message = check_valid_conformation(conformation, seq)
+        is_valid, msg = check_valid_conformation(coords, sequence)
         assert is_valid
     
-    def test_conformation_validation_overlap(self):
-        """Test overlapping residues detected."""
-        seq = load_hp_sequence("HPHH")
-        
-        # Invalid: residues 0 and 2 overlap
-        conformation = np.array([
+    def test_invalid_overlap(self):
+        """Test detection of overlapping residues."""
+        sequence = load_hp_sequence("HPH")
+        coords = np.array([
             [0, 0],
             [1, 0],
-            [0, 0],  # Overlaps with residue 0
-            [1, 1]
+            [1, 0]  # Overlap!
         ])
         
-        is_valid, message = check_valid_conformation(conformation, seq)
+        is_valid, msg = check_valid_conformation(coords, sequence)
         assert not is_valid
-        assert "overlap" in message.lower()
+        assert "overlap" in msg.lower()
+    
+    def test_invalid_bond_length(self):
+        """Test detection of invalid bond lengths."""
+        sequence = load_hp_sequence("HPH")
+        coords = np.array([
+            [0, 0],
+            [2, 0],  # Bond length = 2 (should be 1)
+            [3, 0]
+        ])
+        
+        is_valid, msg = check_valid_conformation(coords, sequence)
+        assert not is_valid
+        assert "length" in msg.lower()

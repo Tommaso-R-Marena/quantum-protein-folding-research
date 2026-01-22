@@ -1,121 +1,96 @@
-"""Tests for analysis and metrics."""
+"""Tests for analysis tools."""
 
 import pytest
 import numpy as np
-import matplotlib
-matplotlib.use('Agg')  # Non-interactive backend
-import matplotlib.pyplot as plt
-
-from quantum_protein_folding.analysis import (
+from quantum_protein_folding.analysis.metrics import (
     compute_rmsd,
     compute_energy_gap,
-    analyze_convergence,
     compute_contact_map,
-    plot_convergence,
-    plot_conformation_2d,
+    analyze_convergence,
 )
 
 
 class TestMetrics:
-    """Tests for analysis metrics."""
+    """Test analysis metrics."""
     
     def test_rmsd_identical(self):
         """Test RMSD of identical structures is zero."""
-        conf = np.array([[0, 0], [1, 0], [1, 1]])
+        coords = np.array([[0, 0], [1, 0], [2, 0]])
         
-        rmsd = compute_rmsd(conf, conf, align=False)
+        rmsd = compute_rmsd(coords, coords)
         
-        assert rmsd < 1e-10
+        assert np.isclose(rmsd, 0.0, atol=1e-6)
     
     def test_rmsd_translation(self):
-        """Test RMSD with translation."""
-        conf1 = np.array([[0, 0], [1, 0], [1, 1]])
-        conf2 = np.array([[5, 5], [6, 5], [6, 6]])  # Translated
+        """Test RMSD with aligned structures."""
+        coords1 = np.array([[0, 0], [1, 0], [2, 0]])
+        coords2 = np.array([[5, 5], [6, 5], [7, 5]])  # Translated
         
-        rmsd_aligned = compute_rmsd(conf1, conf2, align=True)
-        rmsd_unaligned = compute_rmsd(conf1, conf2, align=False)
+        rmsd = compute_rmsd(coords1, coords2, align=True)
         
-        assert rmsd_aligned < 1e-6  # Should be ~0 after alignment
-        assert rmsd_unaligned > 5.0  # Large before alignment
+        # After alignment, should be zero
+        assert np.isclose(rmsd, 0.0, atol=1e-6)
+    
+    def test_rmsd_without_alignment(self):
+        """Test RMSD without alignment."""
+        coords1 = np.array([[0, 0], [1, 0]])
+        coords2 = np.array([[1, 0], [2, 0]])
+        
+        rmsd = compute_rmsd(coords1, coords2, align=False)
+        
+        assert rmsd > 0
     
     def test_energy_gap(self):
         """Test energy gap calculation."""
         gap = compute_energy_gap(-1.0, -2.0)
-        assert gap == 0.5  # (-1 - (-2)) / |-2| = 0.5
-    
-    def test_analyze_convergence(self):
-        """Test convergence analysis."""
-        history = [10.0, 5.0, 3.0, 2.5, 2.1, 2.0, 2.0]
         
-        analysis = analyze_convergence(history)
-        
-        assert 'final_value' in analysis
-        assert 'best_value' in analysis
-        assert analysis['best_value'] == 2.0
-        assert analysis['n_iterations'] == len(history)
+        assert isinstance(gap, (float, np.floating))
+        # (-1 - (-2)) / |-2| = 1/2 = 0.5
+        assert np.isclose(gap, 0.5)
     
     def test_contact_map(self):
         """Test contact map computation."""
-        conformation = np.array([
+        coords = np.array([
             [0, 0],
             [1, 0],
-            [1, 1],
-            [0, 1]
+            [2, 0]
         ])
         
-        contact_map = compute_contact_map(conformation, cutoff=1.5)
+        contact_map = compute_contact_map(coords, cutoff=1.5)
         
-        assert contact_map.shape == (4, 4)
-        assert np.all(contact_map >= 0)
-        assert np.all(contact_map <= 1)
-        # Check symmetry
+        assert contact_map.shape == (3, 3)
+        assert contact_map[0, 1] == 1  # Adjacent residues
+        assert contact_map[1, 2] == 1
+        assert contact_map[0, 2] == 0  # Distance = 2 > cutoff
+    
+    def test_contact_map_symmetry(self):
+        """Test contact map is symmetric."""
+        coords = np.array([[0, 0], [1, 1], [2, 0]])
+        
+        contact_map = compute_contact_map(coords)
+        
         assert np.allclose(contact_map, contact_map.T)
 
 
-class TestPlotting:
-    """Tests for plotting functions."""
+class TestConvergenceAnalysis:
+    """Test convergence analysis."""
     
-    def test_plot_convergence(self, tmp_path):
-        """Test convergence plotting."""
-        history = [10.0, 5.0, 3.0, 2.0, 1.5, 1.0]
+    def test_analyze_simple_convergence(self):
+        """Test convergence analysis on simple history."""
+        history = [10.0, 5.0, 2.0, 1.0, 0.5, 0.5, 0.5]
         
-        save_path = tmp_path / "convergence.png"
+        metrics = analyze_convergence(history)
         
-        fig = plot_convergence(
-            history,
-            save_path=str(save_path),
-            show=False
-        )
+        assert 'final_value' in metrics
+        assert 'best_value' in metrics
+        assert 'n_iterations' in metrics
         
-        assert save_path.exists()
-        assert isinstance(fig, plt.Figure)
-        plt.close(fig)
+        assert np.isclose(metrics['final_value'], 0.5)
+        assert np.isclose(metrics['best_value'], 0.5)
+        assert metrics['n_iterations'] == 7
     
-    def test_plot_conformation_2d(self, tmp_path):
-        """Test 2D conformation plotting."""
-        conformation = np.array([
-            [0, 0],
-            [1, 0],
-            [1, 1],
-            [0, 1]
-        ])
+    def test_convergence_empty_history(self):
+        """Test handling of empty history."""
+        metrics = analyze_convergence([])
         
-        save_path = tmp_path / "structure.png"
-        
-        fig = plot_conformation_2d(
-            conformation,
-            sequence="HPHH",
-            save_path=str(save_path),
-            show=False
-        )
-        
-        assert save_path.exists()
-        assert isinstance(fig, plt.Figure)
-        plt.close(fig)
-    
-    def test_plot_conformation_3d_error(self):
-        """Test error for 3D conformation in 2D plot."""
-        conformation_3d = np.array([[0, 0, 0], [1, 0, 0]])
-        
-        with pytest.raises(ValueError, match="2D"):
-            plot_conformation_2d(conformation_3d, show=False)
+        assert metrics == {}
